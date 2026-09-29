@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.19.5
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -45,46 +45,22 @@
 # ### Installation (if running locally)
 #
 # ```bash
-# pip install --user python-dotenv
+# pip install -e .
 # ```
-
-# %% [markdown]
-# ## Dependency Bootstrap
 #
-# This cell installs `python-dotenv` if it is not already present.
-# If it prints "restart needed", use **Kernel → Restart Kernel**, then re-run from the top.
-
-# %%
-import subprocess as _subprocess
-import sys as _sys
-
-_DEPS = {"python-dotenv": "dotenv"}
-_restart_needed = False
-
-for _pip_name, _import_name in _DEPS.items():
-    try:
-        __import__(_import_name)
-    except ImportError:
-        print(f"Installing {_pip_name}...")
-        try:
-            _subprocess.check_call([_sys.executable, "-m", "pip", "install", "--user", _pip_name])
-            _restart_needed = True
-        except _subprocess.CalledProcessError:
-            print(f"✗ Failed to install {_pip_name}. Run manually: pip install --user {_pip_name}")
-            raise SystemExit(1)
-
-if _restart_needed:
-    print("\n⚠  Packages installed — please restart the kernel and re-run from the top.")
-else:
-    print("✓ All core dependencies available")
+# Run once from the repo root, from a terminal (not from inside a notebook cell).
 
 # %% [markdown]
 # ## Setup
 #
-# Import the shared utilities from the `mcnb` package:
+# ### Locate `mcnb`
+#
+# Adds the repo's `src/` to the path if `mcnb` isn't already installed —
+# no install, no restart.
 
 # %%
-import sys as _sys, subprocess as _subprocess, importlib.util as _importlib_util
+import sys
+import importlib.util as _importlib_util
 from pathlib import Path as _Path
 
 def _find_repo_root():
@@ -96,30 +72,39 @@ def _find_repo_root():
     return None
 
 if _importlib_util.find_spec("mcnb") is None:
+    # Not installed — try adding the repo's src/ to sys.path (no install, no restart).
     _repo_root = _find_repo_root()
-    if _repo_root and (_repo_root / "src" / "mcnb").exists():
-        print(f"Installing mcnb from {_repo_root} ...")
-        _subprocess.check_call(
-            [_sys.executable, "-m", "pip", "install", "--user", "-e", str(_repo_root)],
-            stdout=_subprocess.DEVNULL,
-        )
-        print("⚠  mcnb installed — please restart the kernel and re-run from the top.")
-        raise SystemExit(0)
-    elif _repo_root:
-        _sys.path.insert(0, str(_repo_root / "src"))
-    else:
-        for _p in ["src", "../src"]:
-            _sys.path.insert(0, str(_Path(_p).resolve()))
+    for _p in ([_repo_root / "src"] if _repo_root else []) + [_Path("src"), _Path("../src")]:
+        if (_p / "mcnb").exists():
+            sys.path.insert(0, str(_p.resolve()))
+            break
     if _importlib_util.find_spec("mcnb") is None:
         raise ImportError(
             "Cannot find mcnb. Either:\n"
-            "  1. pip install --user -e /path/to/this/repo  (persistent)\n"
-            "  2. Upload src/ to your JupyterHub home directory"
+            "  1. Run this notebook from within the cloned repository\n"
+            "  2. Or install it explicitly: pip install -e /path/to/this/repo"
         )
-    print("✓ mcnb found via sys.path")
+    print("✓ mcnb found via sys.path (no install needed)")
 else:
     print("✓ mcnb installed")
 
+# %% [markdown]
+# ### Dependency Check
+#
+# This only *checks* that `python-dotenv` is importable — it never installs
+# anything on its own. If something is missing, it tells you the exact
+# command to run yourself in a terminal.
+
+# %%
+from mcnb.util import require_deps
+
+require_deps({"python-dotenv": "dotenv"})
+print("✓ All core dependencies available")
+
+# %% [markdown]
+# Import the rest of the shared utilities from the `mcnb` package:
+
+# %%
 try:
     from IPython import get_ipython as _get_ipython
     _ip = _get_ipython()
@@ -251,7 +236,7 @@ common_paths = [
     "/storage",  # MetaCentrum
     "/auto",     # MetaCentrum auto-mounted homes
     "/tmp",
-    str(Path.home()),
+    os.path.expanduser("~"),
 ]
 
 print("Common paths:")

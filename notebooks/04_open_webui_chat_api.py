@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.19.5
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -66,8 +66,10 @@
 # ### Installation
 #
 # ```bash
-# pip install --user openai python-dotenv
+# pip install -e ".[openwebui]"
 # ```
+#
+# Run once from the repo root, from a terminal (not from inside a notebook cell).
 #
 # **Note**: We use the `openai` package because Open WebUI provides an OpenAI-compatible API.
 
@@ -75,30 +77,13 @@
 # ## Setup
 
 # %% [markdown]
-# ### Dependency Bootstrap
+# ### Locate `mcnb`
+#
+# Adds the repo's `src/` to the path if `mcnb` isn't already installed —
+# no install, no restart.
 
 # %%
-import subprocess as _subprocess, sys as _sys
-_DEPS = {"python-dotenv": "dotenv", "openai": "openai"}
-_restart_needed = False
-for _pip_name, _import_name in _DEPS.items():
-    try:
-        __import__(_import_name)
-    except ImportError:
-        print(f"Installing {_pip_name}...")
-        try:
-            _subprocess.check_call([_sys.executable, "-m", "pip", "install", "--user", _pip_name])
-            _restart_needed = True
-        except _subprocess.CalledProcessError:
-            print(f"✗ Failed to install {_pip_name}. Run manually: pip install --user {_pip_name}")
-            raise SystemExit(1)
-if _restart_needed:
-    print("\n⚠  Restart kernel and re-run from the top.")
-else:
-    print("✓ Dependencies available")
-
-# %%
-import sys as _sys, subprocess as _subprocess, importlib.util as _importlib_util
+import importlib.util as _importlib_util
 from pathlib import Path as _Path
 
 def _find_repo_root():
@@ -110,29 +95,35 @@ def _find_repo_root():
     return None
 
 if _importlib_util.find_spec("mcnb") is None:
+    # Not installed — try adding the repo's src/ to sys.path (no install, no restart).
+    import sys as _sys
     _repo_root = _find_repo_root()
-    if _repo_root and (_repo_root / "src" / "mcnb").exists():
-        print(f"Installing mcnb from {_repo_root} ...")
-        _subprocess.check_call(
-            [_sys.executable, "-m", "pip", "install", "--user", "-e", str(_repo_root)],
-            stdout=_subprocess.DEVNULL,
-        )
-        print("⚠  mcnb installed — please restart the kernel and re-run from the top.")
-        raise SystemExit(0)
-    elif _repo_root:
-        _sys.path.insert(0, str(_repo_root / "src"))
-    else:
-        for _p in ["src", "../src"]:
-            _sys.path.insert(0, str(_Path(_p).resolve()))
+    for _p in ([_repo_root / "src"] if _repo_root else []) + [_Path("src"), _Path("../src")]:
+        if (_p / "mcnb").exists():
+            _sys.path.insert(0, str(_p.resolve()))
+            break
     if _importlib_util.find_spec("mcnb") is None:
         raise ImportError(
             "Cannot find mcnb. Either:\n"
-            "  1. pip install --user -e /path/to/this/repo  (persistent)\n"
-            "  2. Upload src/ to your JupyterHub home directory"
+            "  1. Run this notebook from within the cloned repository\n"
+            "  2. Or install it explicitly: pip install -e /path/to/this/repo"
         )
-    print("✓ mcnb found via sys.path")
+    print("✓ mcnb found via sys.path (no install needed)")
 else:
     print("✓ mcnb installed")
+
+# %% [markdown]
+# ### Dependency Check
+#
+# This only *checks* that dependencies are importable — it never installs
+# anything on its own. If something is missing, it tells you the exact
+# command to run yourself in a terminal.
+
+# %%
+from mcnb.util import require_deps
+
+require_deps({"python-dotenv": "dotenv", "openai": "openai"}, extra="openwebui")
+print("✓ Dependencies available")
 
 try:
     from IPython import get_ipython as _get_ipython
@@ -148,15 +139,10 @@ from mcnb.env import need, optional, mask
 from mcnb.util import print_section, fmt_error
 print("✓ mcnb imported")
 
-try:
-    from openai import OpenAI
-    import openai
-    import json
-    print("✓ openai imported")
-except ImportError as e:
-    print(f"✗ ImportError: {e}")
-    print("  Run: pip install openai")
-    raise
+from openai import OpenAI
+import openai
+import json
+print("✓ openai imported")
 
 # %% [markdown]
 # ### Validate Environment Variables

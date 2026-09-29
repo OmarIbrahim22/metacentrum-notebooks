@@ -1,10 +1,52 @@
 """
 Utility functions for MetaCentrum/e-INFRA notebooks.
 """
+import importlib.util
 import os
 import platform
 import subprocess
-from typing import Optional
+from typing import Dict, List, Optional
+
+
+def check_deps(deps: Dict[str, str]) -> List[str]:
+    """
+    Check which of the given dependencies are importable, without installing
+    anything.
+
+    Args:
+        deps: mapping of {pip_package_name: importable_module_name}
+
+    Returns:
+        List of pip package names that are NOT importable (empty if all present).
+    """
+    return [
+        pip_name
+        for pip_name, import_name in deps.items()
+        if importlib.util.find_spec(import_name) is None
+    ]
+
+
+def require_deps(deps: Dict[str, str], extra: Optional[str] = None) -> None:
+    """
+    Raise ImportError with a copy-pasteable install command if any of `deps`
+    is missing. Never installs anything itself — notebooks must never run
+    pip on the user's behalf.
+
+    Args:
+        deps: mapping of {pip_package_name: importable_module_name}
+        extra: name of the pyproject.toml optional-dependency group that
+            provides these packages (e.g. "s3"), or None for the base install.
+    """
+    missing = check_deps(deps)
+    if not missing:
+        return
+    cmd = f'pip install -e ".[{extra}]"' if extra else "pip install -e ."
+    raise ImportError(
+        "Missing dependencies: " + ", ".join(missing) + "\n\n"
+        "Install them by running this in a terminal (repo root):\n"
+        f"  {cmd}\n\n"
+        "Then re-run this cell (no kernel restart needed)."
+    )
 
 
 def fmt_error(e: Exception, label: str = None) -> str:

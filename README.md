@@ -24,19 +24,31 @@ Sample Jupyter notebooks demonstrating integration with [MetaCentrum](https://me
 ### On MetaCentrum / e-INFRA JupyterHub
 
 1. Upload or clone this repository into your JupyterHub home directory.
-2. Open **`00_environment_check.ipynb`** and run all cells -- it verifies your environment and walks you through credential setup with an interactive wizard.
-3. Open any other notebook and run it. Each notebook auto-installs its dependencies on first run (a one-time kernel restart may be needed).
+2. Open a terminal in JupyterLab and run `pip install -e ".[all]"` once (see the table below if you'd rather install only what a specific notebook needs).
+3. Open **`00_environment_check.ipynb`** and run all cells -- it verifies your environment and walks you through credential setup with an interactive wizard.
+4. Open any other notebook and run it. Each notebook's first cell only *checks* that its dependencies are importable; it never installs anything on your behalf. If something is missing, it prints the exact `pip install -e ".[...]"` command to run.
 
 ### Locally
 
 ```bash
 git clone <this-repo-url>
 cd <repo>
-pip install -e .
+python -m venv .venv && source .venv/bin/activate   # recommended
+pip install -e ".[all]"
 jupyter lab
 ```
 
-Then start with `00_environment_check.ipynb`.
+Then start with `00_environment_check.ipynb`. `.[all]` installs every notebook's dependencies in one go; use one of the narrower extras below if you only need a subset.
+
+| Extra | Installs | Needed by |
+|-------|----------|-----------|
+| `.[s3]` | `boto3` | 01 - S3 Object Storage |
+| `.[invenio]` | `requests` | 02 - Invenio Repository |
+| `.[openstack]` | `openstacksdk` | 03 - OpenStack API |
+| `.[openwebui]` | `openai` | 04 - Open WebUI Chat API |
+| `.[all]` | all of the above | everything |
+
+Notebooks 00 and 05 need no extras beyond the base `pip install -e .`.
 
 ---
 
@@ -87,6 +99,8 @@ All Python notebooks import from `src/mcnb/` to keep credential handling and uti
 | `util.detect_environment()` | Detect platform, Jupyter, MetaCentrum, e-INFRA |
 | `util.check_gpu_available()` | Check GPU availability via nvidia-smi |
 | `util.fmt_error(e, label)` | Format exceptions consistently |
+| `util.check_deps(deps)` | Return the pip names of any missing dependencies |
+| `util.require_deps(deps, extra)` | Raise `ImportError` with the install command if anything is missing (never installs) |
 
 ---
 
