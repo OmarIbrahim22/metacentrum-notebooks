@@ -20,9 +20,11 @@
 #
 # Demonstrate authentication and basic operations with the National Repository Platform (NRP) using the Invenio REST API. This notebook shows how to authenticate, validate access, create draft records, upload files, and handle common API errors.
 #
+# The default target is the NRP **Data Catch-all Repository** at https://datarepo.eosc.cz. Other NRP repositories use the same API with a different base URL and model name.
+#
 # **Runtime**: ~2-3 minutes
 #
-# **Documentation**: https://data.narodni-repozitar.cz/
+# **Documentation**: https://docs.nrp.eosc.cz/en/docs/end_users/catch-all-data-repository/catch-all-repository-introduction
 
 # %% [markdown]
 # ## What You Will Learn
@@ -40,18 +42,20 @@
 # ### Access Requirements
 #
 # You need:
-# - An account on https://data.narodni-repozitar.cz/
-# - A personal access token with appropriate permissions
+# - An account on https://datarepo.eosc.cz (login with e-INFRA CZ AAI)
+# - A personal access token
 
 # %% [markdown]
 # ### Where to Get Credentials
 #
-# 1. Visit https://data.narodni-repozitar.cz/
-# 2. Log in with your credentials
-# 3. Navigate to your account settings / Applications
+# 1. Visit https://datarepo.eosc.cz
+# 2. Log in with your e-INFRA CZ credentials
+# 3. Open your profile settings and go to **Applications**
 # 4. Create a new personal access token
-# 5. Select appropriate scopes (deposit:write, deposit:actions)
-# 6. Copy the generated token
+# 5. Copy the generated token (it is shown only once)
+#
+# The repository's own API page does not yet document token creation; if the
+# **Applications** section is missing, ask support@eosc.cz.
 
 # %% [markdown]
 # ### Required Environment Variables
@@ -59,7 +63,8 @@
 # Add these to your `.env` file:
 #
 # ```bash
-# NRP_BASE=https://data.narodni-repozitar.cz
+# NRP_BASE=https://datarepo.eosc.cz
+# NRP_MODEL=datasets                 # optional, record model to create drafts in
 # NRP_TOKEN=your_personal_access_token_here
 # ```
 
@@ -150,19 +155,24 @@ print("✓ requests imported")
 print_section("Validating Credentials")
 
 try:
-    NRP_BASE = optional("NRP_BASE", "https://data.narodni-repozitar.cz")
+    NRP_BASE = optional("NRP_BASE", "https://datarepo.eosc.cz").rstrip("/")
+    # NRP repositories create drafts under a model-specific endpoint
+    # (POST /api/<model>). "datasets" is the Catch-all Repository's default
+    # model; plain InvenioRDM instances use "records".
+    NRP_MODEL = optional("NRP_MODEL", "datasets")
     NRP_TOKEN = need("NRP_TOKEN")
-    
+
     print("✓ All required environment variables found")
     print(f"\nBase URL: {NRP_BASE}")
+    print(f"Model: {NRP_MODEL}")
     print(f"Token: {mask(NRP_TOKEN)}")
-    
+
 except RuntimeError as e:
     print(f"✗ Missing environment variable: {e}")
     print("\nPlease configure your .env file with:")
-    print("  NRP_BASE=https://data.narodni-repozitar.cz")
+    print("  NRP_BASE=https://datarepo.eosc.cz")
     print("  NRP_TOKEN=your_personal_access_token")
-    print("\nSee: https://data.narodni-repozitar.cz/")
+    print("\nSee: https://docs.nrp.eosc.cz/")
     raise
 
 # %% [markdown]
@@ -262,7 +272,7 @@ draft_metadata = {
 
 try:
     response = session.post(
-        f"{NRP_BASE}/api/records",
+        f"{NRP_BASE}/api/{NRP_MODEL}",
         json=draft_metadata,
         timeout=30,
     )
@@ -284,9 +294,11 @@ try:
         print(f"\nDraft ID: {draft_id}")
         print(f"Draft URL: {draft_link}")
 
-        # Store for later use
+        # Store for later use. DRAFT_URL is the API address of this draft,
+        # taken from the response rather than constructed by hand.
         DRAFT_ID = draft_id
         DRAFT_DATA = draft
+        DRAFT_URL = draft.get("links", {}).get("self") or f"{NRP_BASE}/api/{NRP_MODEL}/{draft_id}/draft"
 
     else:
         print(f"✗ Failed to create draft (HTTP {response.status_code})")
@@ -297,7 +309,11 @@ try:
         DRAFT_DATA = None
 
         if response.status_code == 403:
-            print("\n⚠️  Permission denied. Your token may not have deposit:write scope.")
+            print("\n⚠️  Permission denied. Your account may not be allowed to create records")
+            print("   in this repository (some require membership in a community).")
+        elif response.status_code == 404:
+            print(f"\n⚠️  Endpoint not found. Check NRP_MODEL ('{NRP_MODEL}') — the repository lists")
+            print(f"   its models at {NRP_BASE}/.well-known/repository/")
         elif response.status_code == 422:
             print("\n⚠️  Validation error. Check the metadata fields.")
 
@@ -337,8 +353,9 @@ This is a minimal working demo of the Invenio repository API.
         
         file_name = "test_file.txt"
         
-        # Start file upload
-        files_link = DRAFT_DATA.get("links", {}).get("files", f"{NRP_BASE}/api/records/{DRAFT_ID}/files")
+        # Start file upload. Always follow the links the API returns instead
+        # of building URLs by hand — the paths differ between repositories.
+        files_link = DRAFT_DATA.get("links", {}).get("files", f"{DRAFT_URL}/files")
         
         # Initialize file upload
         try:
@@ -433,7 +450,7 @@ if DRAFT_ID is None:
     print("⚠️  Skipping - no draft record available")
 else:
     try:
-        response = session.get(f"{NRP_BASE}/api/records/{DRAFT_ID}/draft", timeout=30)
+        response = session.get(DRAFT_URL, timeout=30)
 
         if response.status_code == 200:
             try:
@@ -508,14 +525,14 @@ if DRAFT_ID is None:
     print("⚠️  No draft to clean up")
 else:
     try:
-        response = session.delete(f"{NRP_BASE}/api/records/{DRAFT_ID}/draft", timeout=30)
+        response = session.delete(DRAFT_URL, timeout=30)
 
         if response.status_code in [204, 200]:
             print(f"✓ Draft record deleted: {DRAFT_ID}")
 
             # Verify deletion
             try:
-                verify = session.get(f"{NRP_BASE}/api/records/{DRAFT_ID}/draft", timeout=30)
+                verify = session.get(DRAFT_URL, timeout=30)
                 if verify.status_code == 404:
                     print("✓ Deletion verified")
                 else:
@@ -551,9 +568,9 @@ else:
 # - Generate a new token from your account settings
 #
 # **403 Forbidden**
-# - Token doesn't have required permissions
-# - Check token scopes (need deposit:write, deposit:actions)
-# - Regenerate token with correct permissions
+# - Your account is not allowed to perform this action in the repository
+# - Creating records may require membership in a community
+# - Contact the repository support (support@eosc.cz)
 #
 # **400 Bad Request**
 # - Invalid metadata format
@@ -563,7 +580,7 @@ else:
 # **404 Not Found**
 # - Draft ID doesn't exist
 # - Draft was already deleted or published
-# - Wrong base URL
+# - Wrong base URL or wrong `NRP_MODEL`
 #
 # **422 Unprocessable Entity**
 # - Metadata validation failed
@@ -628,6 +645,8 @@ else:
 # %% [markdown]
 # ### Documentation
 #
-# - [National Repository Platform](https://data.narodni-repozitar.cz/)
+# - [National Repository Platform documentation](https://docs.nrp.eosc.cz/)
+# - [Data Catch-all Repository](https://datarepo.eosc.cz)
+# - [NRP repository REST API guide](https://nrp-cz.github.io/docs/userguide/api_docs)
 # - [Invenio RDM Documentation](https://inveniordm.docs.cern.ch/)
 # - [InvenioRDM REST API](https://inveniordm.docs.cern.ch/reference/rest_api_index/)
