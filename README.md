@@ -46,11 +46,11 @@ Notebooks are committed without outputs on purpose. Notebooks 01 and 02 create o
 git clone https://github.com/OmarIbrahim22/metacentrum-notebooks.git
 cd metacentrum-notebooks
 python -m venv .venv && source .venv/bin/activate   # recommended
-pip install -e ".[all]"
+pip install -e ".[all]" jupyterlab
 jupyter lab
 ```
 
-Then start with `00_environment_check.ipynb`. `.[all]` installs every notebook's dependencies in one go; use one of the narrower extras below if you only need a subset.
+`jupyterlab` is installed separately because JupyterHub platforms already provide it. Then start with `00_environment_check.ipynb`. `.[all]` installs every notebook's dependencies in one go; use one of the narrower extras below if you only need a subset.
 
 | Extra | Installs | Needed by |
 |-------|----------|-----------|
