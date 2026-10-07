@@ -47,11 +47,11 @@
 # %% [markdown]
 # ### Where to Get Credentials
 #
-# 1. Visit https://du.cesnet.cz/
-# 2. Log in with your credentials
-# 3. Navigate to Object Storage section
-# 4. Generate or retrieve your access keys
-# 5. Note your S3 endpoint URL
+# 1. Register for the S3 service (join a Virtual Organisation or register for the personal S3 service) — see [Getting Access to CESNET S3](https://docs.du.cesnet.cz/en/docs/object-storage-s3/s3-getting-access)
+# 2. Wait about 30 minutes for the registration to propagate
+# 3. Log in to https://gatekeeper.du.cesnet.cz
+# 4. Press **+ New key**, name the key pair, and save the access key and secret key (the secret key is shown only once)
+# 5. Note the S3 endpoint address shown above the list of keys
 
 # %% [markdown]
 # ### Required Environment Variables
@@ -59,7 +59,7 @@
 # Add these to your `.env` file:
 #
 # ```bash
-# S3_ENDPOINT=https://s3.example.du.cesnet.cz
+# S3_ENDPOINT=https://s3.cl4.du.cesnet.cz   # use the endpoint shown in Gatekeeper
 # S3_ACCESS_KEY=your_access_key_here
 # S3_SECRET_KEY=your_secret_key_here
 # S3_BUCKET=your-bucket-name
@@ -142,7 +142,7 @@ print("✓ mcnb imported")
 
 import boto3
 from botocore.exceptions import ClientError
-import io
+from datetime import datetime
 print("✓ boto3 imported")
 
 # %% [markdown]
@@ -166,7 +166,7 @@ try:
 except RuntimeError as e:
     print(f"✗ Missing environment variable: {e}")
     print("\nPlease configure your .env file with:")
-    print("  S3_ENDPOINT=https://s3.example.du.cesnet.cz")
+    print("  S3_ENDPOINT=https://s3.cl4.du.cesnet.cz")
     print("  S3_ACCESS_KEY=your_access_key")
     print("  S3_SECRET_KEY=your_secret_key")
     print("  S3_BUCKET=your-bucket-name")
@@ -232,10 +232,12 @@ except ClientError as e:
 # %%
 print_section("Uploading Test Object")
 
-# Create test content
-test_key = "demo/hello.txt"
+# Create test content. The key is unique per run, so this demo can never
+# overwrite or delete an object that already exists in your bucket.
+_now = datetime.now()
+test_key = f"mcnb-demo/hello-{_now.strftime('%Y%m%dT%H%M%S')}.txt"
 test_content = "Hello from MetaCentrum Jupyter notebook!\n" + \
-               f"Uploaded at: {__import__('datetime').datetime.now()}\n"
+               f"Uploaded at: {_now}\n"
 
 print(f"Uploading to: s3://{S3_BUCKET}/{test_key}")
 print(f"Content size: {len(test_content)} bytes")
@@ -269,13 +271,13 @@ print_section("Listing Objects in Bucket")
 try:
     response = s3_client.list_objects_v2(
         Bucket=S3_BUCKET,
-        Prefix="demo/",  # Only list objects in demo/ prefix
+        Prefix="mcnb-demo/",  # Only list objects in mcnb-demo/ prefix
         MaxKeys=10,
     )
-    
+
     if "Contents" in response:
         objects = response["Contents"]
-        print(f"Found {len(objects)} object(s) with prefix 'demo/':\n")
+        print(f"Found {len(objects)} object(s) with prefix 'mcnb-demo/':\n")
         
         for obj in objects:
             size_kb = obj["Size"] / 1024
@@ -284,7 +286,7 @@ try:
             print(f"    Last modified: {obj['LastModified']}")
             print()
     else:
-        print("No objects found with prefix 'demo/'")
+        print("No objects found with prefix 'mcnb-demo/'")
         
 except ClientError as e:
     error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
@@ -436,12 +438,12 @@ except ClientError as e:
 # **NoSuchBucket**
 # - Bucket doesn't exist
 # - Typo in bucket name
-# - Bucket belongs to different account/region
+# - Bucket belongs to a different account or Virtual Organisation
 #
 # **AccessDenied / 403**
 # - Credentials don't have permission for this operation
 # - Bucket policy may restrict access
-# - Check IAM permissions
+# - Check that the key was generated for the Virtual Organisation that owns the bucket
 #
 # **EndpointConnectionError**
 # - Wrong endpoint URL
