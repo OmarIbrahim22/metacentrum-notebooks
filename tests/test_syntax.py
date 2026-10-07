@@ -32,3 +32,23 @@ def test_no_runtime_pip_install(name):
     assert "importlib" in source and "find_spec" in source, (
         f"{name}.py should use importlib.util.find_spec for its dependency check"
     )
+
+
+@pytest.mark.parametrize("path", sorted(NOTEBOOKS_DIR.glob("*.ipynb")), ids=lambda p: p.stem)
+def test_notebook_has_no_outputs(path):
+    """
+    Notebooks are committed clean: no outputs, no execution counts.
+
+    Outputs leak local paths and account details, and make every re-run
+    show up as a diff.
+    """
+    import nbformat
+
+    nb = nbformat.read(path, as_version=4)
+    dirty = [
+        i for i, cell in enumerate(nb.cells)
+        if cell.cell_type == "code" and (cell.outputs or cell.execution_count is not None)
+    ]
+    assert not dirty, (
+        f"{path.name} has outputs in cells {dirty} — clear all outputs before committing"
+    )
