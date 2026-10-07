@@ -7,7 +7,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.19.5
 #   kernelspec:
 #     display_name: MATLAB
 #     language: matlab
@@ -385,7 +385,13 @@ try
 
   % Overlay theoretical normal distribution
   x_range = linspace(min(data), max(data), 100);
-  y_theory = normpdf(x_range, 50, 10);
+  if license('test', 'Statistics_Toolbox')
+    y_theory = normpdf(x_range, 50, 10);
+  else
+    % normpdf needs the Statistics and Machine Learning Toolbox;
+    % without it, evaluate the normal density directly
+    y_theory = exp(-(x_range - 50).^2 / (2 * 10^2)) / (10 * sqrt(2 * pi));
+  end
   plot(x_range, y_theory, 'r-', 'LineWidth', 2)
 
   title('Data Distribution vs Theoretical Normal')
@@ -761,6 +767,6 @@ disp('Note: Workspace variables are preserved unless explicitly cleared')
 # - [MATLAB Documentation](https://www.mathworks.com/help/matlab/)
 # - [matlab_kernel](https://github.com/Calysto/matlab_kernel)
 # - [Jupyter MATLAB Proxy](https://github.com/mathworks/jupyter-matlab-proxy)
-# - [MATLAB on MetaCentrum](https://wiki.metacentrum.cz/wiki/MATLAB)
+# - [MATLAB on MetaCentrum](https://docs.metacentrum.cz/en/docs/software/sw-list/matlab)
 # - [MATLAB Training](https://www.mathworks.com/services/training.html)
 # - [MATLAB Central](https://www.mathworks.com/matlabcentral/)
