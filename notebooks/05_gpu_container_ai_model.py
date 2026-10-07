@@ -145,6 +145,7 @@ print("✓ mcnb imported")
 
 import subprocess
 import os
+import tempfile
 
 # %% [markdown]
 # ### Load Configuration
@@ -389,14 +390,14 @@ except Exception as e:
     print(f"Error: {e}")
 '''
         
-        # Write script to temp file
-        script_path = "/tmp/test_gpu_inference.py"
+        # Write script to a uniquely named temp file
         try:
-            with open(script_path, "w") as f:
+            _fd, script_path = tempfile.mkstemp(prefix="mcnb_gpu_test_", suffix=".py")
+            with os.fdopen(_fd, "w") as f:
                 f.write(test_script)
         except OSError as e:
             print(fmt_error(e, label="write temp script"))
-            print("  Cannot write to /tmp — skipping AI inference demo.")
+            print("  Cannot write to the temp directory — skipping AI inference demo.")
             script_path = None
 
         if script_path is None:
@@ -494,9 +495,9 @@ print("=" * 60)
 # %%
 print_section("Cleanup")
 
-cleanup_paths = [
-    "/tmp/test_gpu_inference.py",
-]
+# The inference demo removes its temp script itself; this is a safety net
+# in case that cell was interrupted.
+cleanup_paths = [p for p in [globals().get("script_path")] if p]
 
 for path in cleanup_paths:
     if os.path.exists(path):
@@ -658,6 +659,7 @@ print("      This is normal and helps performance on subsequent runs.")
 # - [Apptainer Documentation](https://apptainer.org/docs/)
 # - [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/)
 # - [NVIDIA NGC Catalog](https://catalog.ngc.nvidia.com/)
-# - [MetaCentrum GPU Guide](https://wiki.metacentrum.cz/wiki/GPU_computing)
+# - [MetaCentrum GPU Computing](https://docs.metacentrum.cz/en/docs/computing/gpu-comput/nvidia)
+# - [MetaCentrum Containers](https://docs.metacentrum.cz/en/docs/software/containers)
 # - [PyTorch Docker Images](https://github.com/pytorch/pytorch#docker-image)
 # - [TensorFlow Docker Images](https://www.tensorflow.org/install/docker)
