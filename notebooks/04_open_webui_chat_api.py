@@ -22,7 +22,7 @@
 #
 # **Runtime**: ~1-2 minutes
 #
-# **Documentation**: https://docs.cerit-sc.cz/en/docs/web-apps/chat-ai
+# **Documentation**: https://docs.cerit.io/en/docs/ai-as-a-service/chat-ai
 
 # %% [markdown]
 # ## What You Will Learn
@@ -46,11 +46,13 @@
 # %% [markdown]
 # ### Where to Get Credentials
 #
-# 1. Visit https://llm.ai.e-infra.cz/
+# 1. Visit the web interface at https://chat.ai.e-infra.cz
 # 2. Log in with your e-INFRA credentials
-# 3. Navigate to Settings → Account → API Keys
-# 4. Create a new API key
-# 5. Copy the generated token (you can't view it again!)
+# 3. Navigate to Settings → Account → API keys
+# 4. Create (or display) your API key
+# 5. Copy the key and store it securely
+#
+# The web interface lives at `chat.ai.e-infra.cz`; the API used by this notebook is at `llm.ai.e-infra.cz/v1`.
 
 # %% [markdown]
 # ### Required Environment Variables
@@ -60,6 +62,7 @@
 # ```bash
 # EINFRA_AI_BASE_URL=https://llm.ai.e-infra.cz/v1
 # EINFRA_AI_TOKEN=your_api_token_here
+# EINFRA_AI_MODEL=mini               # optional, see "List Available Models" below
 # ```
 
 # %% [markdown]
@@ -153,17 +156,21 @@ print_section("Validating Credentials")
 try:
     EINFRA_AI_BASE_URL = optional("EINFRA_AI_BASE_URL", "https://llm.ai.e-infra.cz/v1")
     EINFRA_AI_TOKEN = need("EINFRA_AI_TOKEN")
+    # Optional: which model to chat with. If unset, one is picked from the
+    # list the API returns (see "List Available Models").
+    EINFRA_AI_MODEL = optional("EINFRA_AI_MODEL")
     
     print("✓ All required environment variables found")
     print(f"\nBase URL: {EINFRA_AI_BASE_URL}")
     print(f"API Token: {mask(EINFRA_AI_TOKEN)}")
+    print(f"Model: {EINFRA_AI_MODEL or '(auto-select)'}")
     
 except RuntimeError as e:
     print(f"✗ Missing environment variable: {e}")
     print("\nPlease configure your .env file with:")
     print("  EINFRA_AI_BASE_URL=https://llm.ai.e-infra.cz/v1")
     print("  EINFRA_AI_TOKEN=your_api_token")
-    print("\nSee: https://docs.cerit-sc.cz/en/docs/web-apps/chat-ai")
+    print("\nSee: https://docs.cerit.io/en/docs/ai-as-a-service/chat-ai")
     raise
 
 # %% [markdown]
@@ -205,9 +212,29 @@ try:
             model_id = model.id
             print(f"  {i:2}. {model_id}")
         
-        # Store first model for later use
-        DEFAULT_MODEL = model_list[0].id
-        print(f"\nUsing '{DEFAULT_MODEL}' as default for this demo")
+        # Choose the model for the rest of the demo. The list also contains
+        # models that cannot chat (embeddings, speech-to-text, ...), so the
+        # first entry is not a safe default.
+        model_ids = [m.id for m in model_list]
+        _NON_CHAT_HINTS = ("embed", "whisper", "tts", "rerank", "guard")
+        chat_candidates = [
+            m for m in model_ids if not any(h in m.lower() for h in _NON_CHAT_HINTS)
+        ]
+
+        if EINFRA_AI_MODEL:
+            DEFAULT_MODEL = EINFRA_AI_MODEL
+            if EINFRA_AI_MODEL not in model_ids:
+                print(f"\n⚠️  EINFRA_AI_MODEL='{EINFRA_AI_MODEL}' is not in the list above")
+                print("   (it may be an alias — the request will show whether it works)")
+        elif chat_candidates:
+            DEFAULT_MODEL = chat_candidates[0]
+        else:
+            DEFAULT_MODEL = None
+            print("\n⚠️  No chat-capable model recognised — set EINFRA_AI_MODEL explicitly")
+
+        if DEFAULT_MODEL:
+            print(f"\nUsing '{DEFAULT_MODEL}' for this demo")
+            print("  (set EINFRA_AI_MODEL in your env file to choose a different one)")
     else:
         print("⚠️  No models found")
         print("  This may indicate an authentication or permission issue")
@@ -535,7 +562,7 @@ print_section("Cleanup")
 
 print("✓ No cleanup needed - API calls are stateless")
 print("\n⚠️  Best practices:")
-print("  - Monitor your API usage and costs")
+print("  - Monitor your API usage and respect the service's fair-use limits")
 print("  - Use appropriate max_tokens to avoid waste")
 print("  - Implement rate limiting for production use")
 print("  - Cache responses when appropriate")
@@ -553,8 +580,7 @@ print("  - Cache responses when appropriate")
 #
 # **404 Model Not Found**
 # - Model name misspelled
-# - Model not available in your region
-# - Model deprecated or removed
+# - Model deprecated or removed (the service replaces models over time — prefer the documented aliases)
 # - Use `client.models.list()` to see available models
 #
 # **429 Rate Limit Exceeded**
@@ -649,7 +675,7 @@ print("  - Cache responses when appropriate")
 # - Break complex tasks into steps
 # - Iterate on prompts based on results
 #
-# **Cost Management**
+# **Resource Usage**
 # - Set appropriate max_tokens limits
 # - Use smaller models when sufficient
 # - Cache common responses
@@ -657,7 +683,7 @@ print("  - Cache responses when appropriate")
 #
 # **Safety & Ethics**
 # - Validate AI-generated code before execution
-# - Don't send sensitive data to external APIs
+# - Don't send sensitive or personal data unless the service's terms allow it
 # - Be aware of model biases
 # - Follow usage policies
 
@@ -670,7 +696,7 @@ print("  - Cache responses when appropriate")
 # %% [markdown]
 # ### Documentation
 #
-# - [CERIT-SC Chat AI Docs](https://docs.cerit-sc.cz/en/docs/web-apps/chat-ai)
+# - [CERIT-SC Chat AI Docs](https://docs.cerit.io/en/docs/ai-as-a-service/chat-ai)
 # - [OpenAI Python SDK](https://github.com/openai/openai-python)
 # - [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
 # - [Prompt Engineering Guide](https://www.promptingguide.ai/)
