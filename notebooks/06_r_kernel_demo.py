@@ -7,7 +7,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.19.5
 #   kernelspec:
 #     display_name: R
 #     language: R
@@ -55,9 +55,9 @@
 #
 # **Local installation**:
 # ```bash
-# # Install R (system package manager)
-# # Arch Linux:
-# sudo pacman -S r
+# # Install R with your system package manager or from https://cran.r-project.org/
+# # e.g. Debian/Ubuntu:
+# sudo apt install r-base
 #
 # # Install IRkernel (from R console):
 # R
