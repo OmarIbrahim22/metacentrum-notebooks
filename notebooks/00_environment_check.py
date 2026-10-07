@@ -313,9 +313,10 @@ else:
 # ### Common Issues
 #
 # **ModuleNotFoundError: No module named 'mcnb'**
-# - Make sure you're running the notebook from the repository root directory
-# - The `sys.path.append` in the setup cell should add the `src` directory to your Python path
+# - Make sure you're running the notebook from inside the cloned repository
+# - The setup cell searches upward for the repo root and adds its `src` directory to your Python path
 # - Verify that `src/mcnb/util.py` and `src/mcnb/env.py` exist
+# - Or install the package once from a terminal: `pip install -e .`
 #
 # **GPU not detected but you have one**
 # - Check if nvidia drivers are installed: `nvidia-smi` should work in terminal
