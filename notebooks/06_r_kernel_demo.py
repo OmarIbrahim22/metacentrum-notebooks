@@ -607,5 +607,3 @@ cat("Workspace can be cleared with: rm(list=ls())\n")
 # - [Advanced R](https://adv-r.hadley.nz/)
 # - [Tidyverse](https://www.tidyverse.org/)
 # - [RStudio Cheatsheets](https://www.rstudio.com/resources/cheatsheets/)
-
-# %%
