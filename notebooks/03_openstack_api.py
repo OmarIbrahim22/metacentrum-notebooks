@@ -22,7 +22,7 @@
 #
 # **Runtime**: ~2-3 minutes
 #
-# **Documentation**: https://docs.platforms.cloud.e-infra.cz/en/docs/technical-reference/brno-g2-site
+# **Documentation**: https://docs.platforms.cloud.e-infra.cz/en/docs/iaas-cloud/technical-reference/brno-g2-site
 
 # %% [markdown]
 # ## What You Will Learn
@@ -47,12 +47,12 @@
 # %% [markdown]
 # ### Where to Get Credentials
 #
-# 1. Visit https://dashboard.cloud.e-infra.cz/
-# 2. Log in with your credentials
+# 1. Visit the dashboard of your cloud site, e.g. https://brno.openstack.cloud.e-infra.cz/ (Brno G2)
+# 2. Log in with your e-INFRA CZ credentials
 # 3. Navigate to Identity → Application Credentials
 # 4. Create a new application credential
 # 5. Download the credentials (you can't view the secret again!)
-# 6. Note your region name (e.g., `brno-g2`, `liberec3-ngn`)
+# 6. Note the auth URL and region name from the downloaded `openrc`/`clouds.yaml` file (Brno G2: `Brno1`)
 
 # %% [markdown]
 # ### Required Environment Variables
@@ -60,10 +60,10 @@
 # Add these to your `.env` file:
 #
 # ```bash
-# OS_AUTH_URL=https://identity.cloud.e-infra.cz/v3
+# OS_AUTH_URL=https://identity.brno.openstack.cloud.e-infra.cz/v3
 # OS_APPLICATION_CREDENTIAL_ID=your_credential_id
 # OS_APPLICATION_CREDENTIAL_SECRET=your_credential_secret
-# OS_REGION_NAME=brno-g2
+# OS_REGION_NAME=Brno1
 # ```
 
 # %% [markdown]
@@ -155,7 +155,7 @@ try:
     OS_AUTH_URL = need("OS_AUTH_URL")
     OS_APPLICATION_CREDENTIAL_ID = need("OS_APPLICATION_CREDENTIAL_ID")
     OS_APPLICATION_CREDENTIAL_SECRET = need("OS_APPLICATION_CREDENTIAL_SECRET")
-    OS_REGION_NAME = optional("OS_REGION_NAME", "brno-g2")
+    OS_REGION_NAME = optional("OS_REGION_NAME", "Brno1")
     
     print("✓ All required environment variables found")
     print(f"\nAuth URL: {OS_AUTH_URL}")
@@ -166,10 +166,10 @@ try:
 except RuntimeError as e:
     print(f"✗ Missing environment variable: {e}")
     print("\nPlease configure your .env file with:")
-    print("  OS_AUTH_URL=https://identity.cloud.e-infra.cz/v3")
+    print("  OS_AUTH_URL=https://identity.brno.openstack.cloud.e-infra.cz/v3")
     print("  OS_APPLICATION_CREDENTIAL_ID=your_id")
     print("  OS_APPLICATION_CREDENTIAL_SECRET=your_secret")
-    print("  OS_REGION_NAME=brno-g2")
+    print("  OS_REGION_NAME=Brno1")
     print("\nSee: https://docs.platforms.cloud.e-infra.cz/")
     raise
 
@@ -271,8 +271,8 @@ except Exception as e:
 print_section("Listing Available Images")
 
 try:
-    # List only active images to reduce noise
-    images = list(conn.compute.images())
+    # Images are served by the Image service (Glance)
+    images = list(conn.image.images())
     
     if images:
         print(f"✓ Found {len(images)} image(s)")
@@ -453,12 +453,15 @@ print("  4. Delete security groups (if custom ones were created)")
 # %% [markdown]
 # ### Region Issues
 #
-# e-INFRA CZ has multiple regions:
-# - `brno-g2` - Brno site (G2)
-# - `liberec3-ngn` - Liberec site
-# - `praha1` - Prague site
+# e-INFRA CZ runs several OpenStack sites, each with its own auth URL and region name:
 #
-# Make sure you use the region your project is in.
+# | Site | `OS_AUTH_URL` | `OS_REGION_NAME` |
+# |------|---------------|------------------|
+# | Brno G2 | `https://identity.brno.openstack.cloud.e-infra.cz/v3` | `Brno1` |
+# | Ostrava G2 | `https://identity.ostrava.openstack.cloud.e-infra.cz/v3` | see your `openrc` file |
+#
+# Application credentials are valid only on the site where they were created.
+# The auth URL and region are both in the `openrc`/`clouds.yaml` file you download with the credential.
 
 # %% [markdown]
 # ### Debugging Tips
@@ -469,7 +472,7 @@ print("  4. Delete security groups (if custom ones were created)")
 # openstack.enable_logging(debug=True)
 #
 # # Check SDK version
-# import openstack
+# import openstack.version
 # print(f"OpenStack SDK version: {openstack.version.__version__}")
 #
 # # List all available services
@@ -522,4 +525,4 @@ print("  4. Delete security groups (if custom ones were created)")
 # - [e-INFRA CZ Cloud Docs](https://docs.platforms.cloud.e-infra.cz/)
 # - [OpenStack SDK Documentation](https://docs.openstack.org/openstacksdk/)
 # - [OpenStack API Reference](https://docs.openstack.org/api-ref/)
-# - [Brno G2 Site Guide](https://docs.platforms.cloud.e-infra.cz/en/docs/technical-reference/brno-g2-site)
+# - [Brno G2 Site Guide](https://docs.platforms.cloud.e-infra.cz/en/docs/iaas-cloud/technical-reference/brno-g2-site)
