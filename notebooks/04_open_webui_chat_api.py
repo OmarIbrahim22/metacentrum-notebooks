@@ -213,28 +213,41 @@ try:
             print(f"  {i:2}. {model_id}")
         
         # Choose the model for the rest of the demo. The list also contains
-        # models that cannot chat (embeddings, speech-to-text, ...), so the
-        # first entry is not a safe default.
+        # models that cannot chat (embeddings, speech, ...), so the first
+        # entry is not a safe default. Unless EINFRA_AI_MODEL is set, send a
+        # one-word test message to a few candidates and keep the first that
+        # answers.
         model_ids = [m.id for m in model_list]
         _NON_CHAT_HINTS = ("embed", "whisper", "tts", "rerank", "guard")
         chat_candidates = [
             m for m in model_ids if not any(h in m.lower() for h in _NON_CHAT_HINTS)
         ]
 
+        DEFAULT_MODEL = None
         if EINFRA_AI_MODEL:
             DEFAULT_MODEL = EINFRA_AI_MODEL
             if EINFRA_AI_MODEL not in model_ids:
                 print(f"\n⚠️  EINFRA_AI_MODEL='{EINFRA_AI_MODEL}' is not in the list above")
                 print("   (it may be an alias — the request will show whether it works)")
-        elif chat_candidates:
-            DEFAULT_MODEL = chat_candidates[0]
         else:
-            DEFAULT_MODEL = None
-            print("\n⚠️  No chat-capable model recognised — set EINFRA_AI_MODEL explicitly")
+            print("\nLooking for a model that answers chat requests...")
+            for candidate in chat_candidates[:5]:
+                try:
+                    client.chat.completions.create(
+                        model=candidate,
+                        messages=[{"role": "user", "content": "Say OK."}],
+                        max_tokens=5,
+                    )
+                    DEFAULT_MODEL = candidate
+                    break
+                except (openai.BadRequestError, openai.NotFoundError, openai.PermissionDeniedError) as e:
+                    print(f"  - {candidate}: not usable for chat ({type(e).__name__})")
 
         if DEFAULT_MODEL:
             print(f"\nUsing '{DEFAULT_MODEL}' for this demo")
             print("  (set EINFRA_AI_MODEL in your env file to choose a different one)")
+        else:
+            print("\n⚠️  No chat-capable model found — set EINFRA_AI_MODEL explicitly")
     else:
         print("⚠️  No models found")
         print("  This may indicate an authentication or permission issue")
