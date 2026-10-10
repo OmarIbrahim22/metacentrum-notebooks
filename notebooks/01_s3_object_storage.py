@@ -191,6 +191,10 @@ print("✓ S3 client created successfully")
 # %% [markdown]
 # ## Minimal Working Demo
 #
+# **If a step fails**: the notebook stops at that cell. Jump to the
+# **Cleanup** section and run its cell so the test object in `mcnb-demo/`
+# is not left in your bucket.
+#
 # ### 1. List Buckets (Validate Access)
 
 # %%

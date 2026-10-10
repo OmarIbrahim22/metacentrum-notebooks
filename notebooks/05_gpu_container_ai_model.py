@@ -409,11 +409,11 @@ except Exception as e:
                 # Build container command
                 if RUNTIME_NAME in ["apptainer", "singularity"]:
                     gpu_flag = "--nv" if GPU_AVAILABLE else ""
-                    container_ref = CONTAINER_IMAGE if CONTAINER_IMAGE else "docker://pytorch/pytorch:latest"
+                    container_ref = CONTAINER_IMAGE if CONTAINER_IMAGE else "docker://pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime"
                     cmd = f"{RUNTIME_CMD} exec {gpu_flag} {container_ref} python {script_path}"
                 else:  # docker
                     gpu_flag = "--gpus all" if GPU_AVAILABLE else ""
-                    container_ref = CONTAINER_IMAGE if CONTAINER_IMAGE else "pytorch/pytorch:latest"
+                    container_ref = CONTAINER_IMAGE if CONTAINER_IMAGE else "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime"
                     cmd = f"{RUNTIME_CMD} run --rm {gpu_flag} -v {script_path}:{script_path} {container_ref} python {script_path}"
 
                 print(f"Running: {cmd}\n")

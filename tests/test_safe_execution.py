@@ -5,7 +5,9 @@ Safe by construction: 00 and 05 never call an external service (00 is local
 diagnostics, 05 degrades gracefully with no GPU/container runtime). HOME is
 redirected to an isolated temp dir so the credential-wizard cell in 00 finds
 a pre-seeded ~/.config/mcnb/env and skips interactive prompts, and nothing
-touches your real config.
+touches your real ~/.config. A repo-root .env, if present, is still loaded
+by mcnb.env inside the kernel (only HOME is faked); these notebooks never
+send it anywhere.
 """
 import nbformat
 import pytest

@@ -2,9 +2,12 @@
 Shared fixtures and constants for the notebook test suite.
 
 Safe tests (the default `pytest` run) never touch the network and never read
-or write your real ~/.config/mcnb/env or repo .env — they use an isolated
-fake HOME instead. Only tests marked `integration` (opt-in via
-`pytest -m integration`) use your real credentials and call real services.
+or write your real ~/.config/mcnb/env — they use an isolated fake HOME
+instead. Repo-root env_*, env and .env files are NOT isolated: mcnb.env
+loads them on import, so kernels started by the safe tests can see them.
+The credential-free notebooks (00, 05) do not use those values. Only tests
+marked `integration` (opt-in via `pytest -m integration`) are meant to use
+your real credentials and call real services.
 """
 from pathlib import Path
 

@@ -193,6 +193,10 @@ print("✓ API client configured successfully")
 # %% [markdown]
 # ## Minimal Working Demo
 #
+# **If a step fails**: the notebook stops at that cell. Jump to the
+# **Cleanup** section and run its cell so the draft record is not left
+# in your repository.
+#
 # ### 1. Validate API Access
 
 # %%
@@ -226,6 +230,7 @@ try:
     else:
         print(f"✗ Authentication failed (HTTP {response.status_code})")
         print(f"  Response: {response.text}")
+        raise RuntimeError(f"Authentication check failed (HTTP {response.status_code})")
 
 except requests.exceptions.ConnectionError as e:
     print(fmt_error(e, label="API connection"))

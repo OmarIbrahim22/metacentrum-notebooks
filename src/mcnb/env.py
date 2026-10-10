@@ -7,6 +7,10 @@ Env file search order (lowest → highest priority, later overrides earlier):
   3. <repo>/.env           — standard dotenv (gitignored)
   4. ~/.config/mcnb/env   — persistent home-dir config (highest priority)
 
+Env files override variables already present in the process environment
+(override=True): a value exported in the shell is replaced by the same key
+in any loaded file, and need() re-reads the files when a variable is missing.
+
 env.example is never auto-loaded — it is a template used only by setup_env().
 """
 import os

@@ -485,10 +485,10 @@ else:
             print(code)
             print("=" * 60)
 
-    except openai.APIError as e:
-        print(fmt_error(e, label="code generation — API error"))
     except openai.APIConnectionError as e:
         print(fmt_error(e, label="code generation — connection"))
+    except openai.APIError as e:
+        print(fmt_error(e, label="code generation — API error"))
     except Exception as e:
         print(fmt_error(e, label="code generation"))
 
@@ -535,11 +535,11 @@ else:
         if not full_response:
             print("⚠️  No content received in stream — model may not support streaming")
 
+    except openai.APIConnectionError as e:
+        print(fmt_error(e, label="streaming — connection"))
     except openai.APIError as e:
         print(fmt_error(e, label="streaming — API error"))
         print("  Note: Streaming may not be supported by all models")
-    except openai.APIConnectionError as e:
-        print(fmt_error(e, label="streaming — connection"))
     except Exception as e:
         print(fmt_error(e, label="streaming"))
         print("  Note: Streaming may not be supported by all models")

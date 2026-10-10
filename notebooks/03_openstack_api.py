@@ -30,7 +30,7 @@
 # - How to authenticate with OpenStack using application credentials
 # - How to list available compute flavors (VM sizes)
 # - How to list available images (OS templates)
-# - How to list projects and check quotas
+# - How to check compute quotas
 # - How to handle common OpenStack API errors
 # - Best practices for safe API exploration
 
@@ -219,17 +219,19 @@ try:
     if current_project:
         print("✓ Authentication successful!")
         print(f"\nCurrent Project:")
-        print(f"  Name: {current_project.get('name', 'N/A')}")
-        print(f"  ID: {current_project.get('id', 'N/A')}")
-        print(f"  Domain: {current_project.get('domain_id', 'N/A')}")
+        print(f"  Name: {current_project.get('name') or 'N/A'}")
+        print(f"  ID: {current_project.get('id') or 'N/A'}")
+        print(f"  Domain: {current_project.get('domain_id') or 'N/A'}")
     else:
         print("⚠️  Authentication succeeded but no project info available")
         
 except OpenStackCloudException as e:
     print(fmt_error(e, label="authentication verification"))
     print("  Check your application credential ID/secret and auth URL.")
+    raise
 except Exception as e:
     print(fmt_error(e, label="authentication verification"))
+    raise
 
 # %% [markdown]
 # ### 2. List Available Flavors (VM Sizes)
@@ -319,8 +321,6 @@ try:
             ("Instances", "instances"),
             ("VCPUs", "cores"),
             ("RAM (MB)", "ram"),
-            ("Volumes", "volumes"),
-            ("Floating IPs", "floating_ips"),
         ]
         
         print(f"{'Resource':<20} {'Limit':>10}")
