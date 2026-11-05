@@ -2,7 +2,7 @@
 
 Sample Jupyter notebooks demonstrating integration with [MetaCentrum](https://metavo.metacentrum.cz/) and [e-INFRA CZ](https://www.e-infra.cz/) services. Each notebook covers one service, includes step-by-step documentation, and is designed to run on [ondemand.metacentrum.cz](https://ondemand.metacentrum.cz/) and [jupyter.e-infra.cz](https://jupyter.e-infra.cz/).
 
-**See them run:** [omaribrahim22.github.io/metacentrum-notebooks-site](https://omaribrahim22.github.io/metacentrum-notebooks-site/) shows every notebook with its real output, readable without an account or any installation.
+See them run: [omaribrahim22.github.io/metacentrum-notebooks-site](https://omaribrahim22.github.io/metacentrum-notebooks-site/) shows every notebook with its real output, readable without an account or any installation.
 
 ---
 
