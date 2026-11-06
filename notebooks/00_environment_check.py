@@ -127,20 +127,28 @@ print("✓ mcnb imported")
 # %% [markdown]
 # ## Credential Setup
 #
-# Run this cell to configure your credentials interactively. They are saved to
-# `~/.config/mcnb/env` and persist across kernel restarts and sessions.
+# The service notebooks (01–04) read their credentials from an env file. This
+# section only shows how to create one; running it changes nothing.
 #
-# **Workshop / shared credentials:** upload a pre-filled `env.example` to the
-# repo root, then run this cell — it will copy all values for you.
+# **Recommended: write the env file by hand.**
 #
-# **Personal credentials:** run this cell and type your own values when prompted.
+# 1. Copy `env.example` in the repo root to a file named `env`. Name it `env`,
+#    not `.env`: OnDemand's file browser hides and blocks dotfiles.
+# 2. Replace each `REPLACE_ME` with your own value. `env.example` links to where
+#    each credential is obtained, and every notebook lists the variables it needs.
 #
-# To reset: `rm ~/.config/mcnb/env` in a terminal, then re-run this cell.
+# `env` is gitignored, so your credentials never end up in the repository.
+#
+# **Optional: interactive wizard.** If you prefer to be prompted, uncomment the
+# two lines in the cell below and run it. It asks for each value and writes
+# `~/.config/mcnb/env`, which overrides every other env file. To undo it, run
+# `rm ~/.config/mcnb/env` in a terminal.
 
 # %%
-from mcnb.env import setup_env
-
-setup_env()
+# Optional: interactive wizard instead of a manual `env` file.
+# It writes ~/.config/mcnb/env (overrides other env files).
+# from mcnb.env import setup_env
+# setup_env()
 
 # %% [markdown]
 # ## Minimal Working Demo

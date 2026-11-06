@@ -62,8 +62,15 @@
 #
 # ```bash
 # CONTAINER_RUNTIME=apptainer  # or singularity, docker
-# CONTAINER_IMAGE=/path/to/image.sif  # optional: path to specific image
+# CONTAINER_IMAGE=/path/to/image.sif  # optional, see below
 # ```
+#
+# `CONTAINER_IMAGE` is used for both container steps (GPU test and PyTorch
+# inference), so it must be an image **with PyTorch**. It can be a local `.sif`
+# file or a Docker Hub name such as `pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime`.
+# The GPU test still works with such an image: `--nv` (Apptainer) and
+# `--gpus all` (Docker) bring the host's `nvidia-smi` and drivers into the
+# container. Without `CONTAINER_IMAGE`, each step pulls its own default image.
 
 # %% [markdown]
 # ### Installation
@@ -160,8 +167,28 @@ CONTAINER_IMAGE = optional("CONTAINER_IMAGE", None)
 print(f"Container runtime preference: {CONTAINER_RUNTIME}")
 if CONTAINER_IMAGE:
     print(f"Container image: {CONTAINER_IMAGE}")
+    looks_like_path = CONTAINER_IMAGE.endswith(".sif") or CONTAINER_IMAGE.startswith(("/", "./", "~"))
+    if looks_like_path and not os.path.exists(os.path.expanduser(CONTAINER_IMAGE)):
+        print("⚠️  CONTAINER_IMAGE looks like a file path, but the file does not exist.")
+        print("   Check the path, or use a Docker Hub name instead.")
 else:
-    print("Container image: Will auto-detect or use minimal demo")
+    print("Container image: default image per step (pulled from Docker Hub)")
+
+
+def image_ref(default):
+    """Image for the current runtime: CONTAINER_IMAGE or the given default.
+
+    Apptainer/Singularity need a docker:// prefix for Docker Hub names;
+    local .sif files and references that already have a scheme are kept.
+    """
+    image = CONTAINER_IMAGE or default
+    if RUNTIME_NAME in ("apptainer", "singularity"):
+        local = os.path.expanduser(image)
+        if os.path.exists(local):
+            return local
+        if "://" not in image:
+            return f"docker://{image}"
+    return image
 
 # %% [markdown]
 # ## Minimal Working Demo
@@ -311,20 +338,11 @@ else:
         # Build GPU-enabled container command
         if RUNTIME_NAME in ["apptainer", "singularity"]:
             # Apptainer/Singularity use --nv flag for NVIDIA GPU support
-            if CONTAINER_IMAGE and os.path.exists(CONTAINER_IMAGE):
-                container_ref = CONTAINER_IMAGE
-            else:
-                # Use NVIDIA CUDA container from Docker Hub
-                container_ref = "docker://nvidia/cuda:12.0.0-base-ubuntu22.04"
-            
+            container_ref = image_ref("nvidia/cuda:12.0.0-base-ubuntu22.04")
             cmd = f"{RUNTIME_CMD} exec --nv {container_ref} nvidia-smi"
             
         else:  # docker
-            if CONTAINER_IMAGE:
-                container_ref = CONTAINER_IMAGE
-            else:
-                container_ref = "nvidia/cuda:12.0.0-base-ubuntu22.04"
-            
+            container_ref = image_ref("nvidia/cuda:12.0.0-base-ubuntu22.04")
             cmd = f"{RUNTIME_CMD} run --rm --gpus all {container_ref} nvidia-smi"
         
         print(f"Running: {cmd}\n")
@@ -409,11 +427,11 @@ except Exception as e:
                 # Build container command
                 if RUNTIME_NAME in ["apptainer", "singularity"]:
                     gpu_flag = "--nv" if GPU_AVAILABLE else ""
-                    container_ref = CONTAINER_IMAGE if CONTAINER_IMAGE else "docker://pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime"
+                    container_ref = image_ref("pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime")
                     cmd = f"{RUNTIME_CMD} exec {gpu_flag} {container_ref} python {script_path}"
                 else:  # docker
                     gpu_flag = "--gpus all" if GPU_AVAILABLE else ""
-                    container_ref = CONTAINER_IMAGE if CONTAINER_IMAGE else "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime"
+                    container_ref = image_ref("pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime")
                     cmd = f"{RUNTIME_CMD} run --rm {gpu_flag} -v {script_path}:{script_path} {container_ref} python {script_path}"
 
                 print(f"Running: {cmd}\n")

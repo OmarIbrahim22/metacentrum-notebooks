@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "mcnb"
 version = "0.1.0"
 description = "MetaCentrum/e-INFRA CZ notebook utilities"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = ["python-dotenv"]
 
 [project.optional-dependencies]

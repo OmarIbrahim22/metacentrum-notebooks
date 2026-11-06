@@ -193,6 +193,39 @@ except Exception as e:
     raise
 
 # %% [markdown]
+# ### Answer Helper
+#
+# Some models are *reasoning* models: they write hidden reasoning before the
+# answer, and those tokens count towards `max_tokens`. If the limit is reached
+# first, the request succeeds but `message.content` is empty. The demo cells
+# therefore use a generous `MAX_TOKENS` and read every answer through
+# `get_answer()`, which fails clearly instead of printing an empty reply.
+
+# %%
+MAX_TOKENS = 1024  # room for hidden reasoning plus a short answer
+
+
+def get_answer(response, label):
+    """Return the reply text, or raise ValueError explaining why there is none."""
+    if not response.choices:
+        raise ValueError(f"{label}: the response contains no choices")
+    choice = response.choices[0]
+    text = choice.message.content
+    if not text or not text.strip():
+        message = f"{label}: the model returned no text (finish_reason={choice.finish_reason})"
+        if choice.finish_reason == "length":
+            message += (
+                "\n  The token limit was reached before an answer was written. This usually"
+                "\n  means a reasoning model spent the whole budget on hidden reasoning."
+                "\n  Raise MAX_TOKENS or set EINFRA_AI_MODEL to a different model."
+            )
+        raise ValueError(message)
+    return text
+
+
+print(f"✓ get_answer() defined, MAX_TOKENS = {MAX_TOKENS}")
+
+# %% [markdown]
 # ## Minimal Working Demo
 #
 # ### 1. List Available Models
@@ -305,35 +338,27 @@ else:
         response = client.chat.completions.create(
             model=DEFAULT_MODEL,
             messages=messages,
-            max_tokens=100,
+            max_tokens=MAX_TOKENS,
             temperature=0.7,
         )
 
-        # Extract response defensively
-        if not response.choices:
-            print("✗ Chat completion returned empty choices list")
-            print(f"  Full response: {response}")
-        else:
-            try:
-                answer = response.choices[0].message.content
-            except (IndexError, AttributeError) as e:
-                print(fmt_error(e, label="extract response content"))
-                print(f"  Raw choices: {response.choices}")
-                raise
+        answer = get_answer(response, "chat completion")
 
-            print("✓ Chat completion successful!\n")
-            print("Response:")
-            print("-" * 60)
-            print(answer)
-            print("-" * 60)
+        print("✓ Chat completion successful!\n")
+        print("Response:")
+        print("-" * 60)
+        print(answer)
+        print("-" * 60)
 
-            # Show usage statistics
-            if hasattr(response, 'usage') and response.usage:
-                print(f"\nToken usage:")
-                print(f"  Prompt tokens: {response.usage.prompt_tokens}")
-                print(f"  Completion tokens: {response.usage.completion_tokens}")
-                print(f"  Total tokens: {response.usage.total_tokens}")
+        # Show usage statistics
+        if hasattr(response, 'usage') and response.usage:
+            print(f"\nToken usage:")
+            print(f"  Prompt tokens: {response.usage.prompt_tokens}")
+            print(f"  Completion tokens: {response.usage.completion_tokens}")
+            print(f"  Total tokens: {response.usage.total_tokens}")
 
+    except ValueError as e:
+        print(f"✗ {e}")
     except openai.AuthenticationError as e:
         print(fmt_error(e, label="chat completion — authentication"))
         print("  Your API token is invalid or expired.")
@@ -383,18 +408,12 @@ else:
             response1 = client.chat.completions.create(
                 model=DEFAULT_MODEL,
                 messages=conversation,
-                max_tokens=50,
+                max_tokens=MAX_TOKENS,
             )
-            if not response1.choices:
-                print("✗ Turn 1: empty choices returned")
-                raise ValueError("No choices in response")
-            answer1 = response1.choices[0].message.content
         except (openai.APIError, openai.APIConnectionError, openai.RateLimitError) as e:
             print(fmt_error(e, label="multi-turn turn 1"))
             raise
-        except (IndexError, AttributeError) as e:
-            print(fmt_error(e, label="multi-turn turn 1 — parse response"))
-            raise
+        answer1 = get_answer(response1, "turn 1")
 
         conversation.append({"role": "assistant", "content": answer1})
 
@@ -412,18 +431,12 @@ else:
             response2 = client.chat.completions.create(
                 model=DEFAULT_MODEL,
                 messages=conversation,
-                max_tokens=50,
+                max_tokens=MAX_TOKENS,
             )
-            if not response2.choices:
-                print("✗ Turn 2: empty choices returned")
-                raise ValueError("No choices in response")
-            answer2 = response2.choices[0].message.content
         except (openai.APIError, openai.APIConnectionError, openai.RateLimitError) as e:
             print(fmt_error(e, label="multi-turn turn 2"))
             raise
-        except (IndexError, AttributeError) as e:
-            print(fmt_error(e, label="multi-turn turn 2 — parse response"))
-            raise
+        answer2 = get_answer(response2, "turn 2")
 
         print("Turn 2:")
         print(f"  User: {conversation[-1]['content']}")
@@ -431,6 +444,8 @@ else:
 
         print("\n✓ Multi-turn conversation demonstrated successfully")
 
+    except ValueError as e:
+        print(f"✗ {e}")
     except openai.AuthenticationError as e:
         print(fmt_error(e, label="multi-turn conversation — authentication"))
     except openai.RateLimitError as e:
@@ -464,27 +479,20 @@ else:
         response = client.chat.completions.create(
             model=DEFAULT_MODEL,
             messages=messages,
-            max_tokens=200,
+            max_tokens=MAX_TOKENS,
             temperature=0.3,  # Lower temperature for more deterministic code
         )
-        
-        if not response.choices:
-            print("✗ Code generation returned empty choices list")
-            print(f"  Full response: {response}")
-        else:
-            try:
-                code = response.choices[0].message.content
-            except (IndexError, AttributeError) as e:
-                print(fmt_error(e, label="extract code from response"))
-                print(f"  Raw choices: {response.choices}")
-                raise
 
-            print("✓ Code generated successfully\n")
-            print("Generated code:")
-            print("=" * 60)
-            print(code)
-            print("=" * 60)
+        code = get_answer(response, "code generation")
 
+        print("✓ Code generated successfully\n")
+        print("Generated code:")
+        print("=" * 60)
+        print(code)
+        print("=" * 60)
+
+    except ValueError as e:
+        print(f"✗ {e}")
     except openai.APIConnectionError as e:
         print(fmt_error(e, label="code generation — connection"))
     except openai.APIError as e:
@@ -514,15 +522,17 @@ else:
         stream = client.chat.completions.create(
             model=DEFAULT_MODEL,
             messages=messages,
-            max_tokens=50,
+            max_tokens=MAX_TOKENS,
             stream=True,  # Enable streaming
         )
-        
+
         full_response = ""
+        finish_reason = None
         for chunk in stream:
             try:
                 if not chunk.choices:
                     continue
+                finish_reason = chunk.choices[0].finish_reason or finish_reason
                 delta_content = chunk.choices[0].delta.content
                 if delta_content is not None:
                     full_response += delta_content
@@ -531,9 +541,15 @@ else:
                 print(f"\n⚠️  Chunk parse error: {fmt_error(e)} — skipping chunk")
                 continue
 
-        print("\n\n✓ Streaming completed")
-        if not full_response:
-            print("⚠️  No content received in stream — model may not support streaming")
+        if full_response.strip():
+            print("\n\n✓ Streaming completed")
+        else:
+            print(f"\n✗ No text received in stream (finish_reason={finish_reason})")
+            if finish_reason == "length":
+                print("  The token limit was reached before an answer was written; see the")
+                print("  Answer Helper section. Raise MAX_TOKENS or set EINFRA_AI_MODEL.")
+            else:
+                print("  The model may not support streaming.")
 
     except openai.APIConnectionError as e:
         print(fmt_error(e, label="streaming — connection"))

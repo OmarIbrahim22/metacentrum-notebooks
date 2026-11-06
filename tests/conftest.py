@@ -36,7 +36,7 @@ CREDENTIAL_FREE_NOTEBOOKS = [
 # notebook -> (env vars it needs, pip extra that provides its 3rd-party dep)
 CREDENTIALED_NOTEBOOKS = {
     "01_s3_object_storage": (
-        ["S3_ENDPOINT", "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_BUCKET"],
+        ["S3_ENDPOINT", "S3_ACCESS_KEY", "S3_SECRET_KEY"],
         "s3",
     ),
     "02_invenio_repository": (["NRP_TOKEN"], "invenio"),

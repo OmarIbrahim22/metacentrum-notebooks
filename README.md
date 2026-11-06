@@ -11,7 +11,7 @@ See them run: [omaribrahim22.github.io/metacentrum-notebooks-site](https://omari
 | # | Notebook | Service | Credentials |
 |---|----------|---------|-------------|
 | 00 | [Environment Check](notebooks/00_environment_check.ipynb) | Diagnostics & credential setup wizard | None |
-| 01 | [S3 Object Storage](notebooks/01_s3_object_storage.ipynb) | [CESNET S3 storage](https://docs.du.cesnet.cz/en/docs/object-storage-s3/s3-service) | S3 endpoint, access key, secret key, bucket |
+| 01 | [S3 Object Storage](notebooks/01_s3_object_storage.ipynb) | [CESNET S3 storage](https://docs.du.cesnet.cz/en/docs/object-storage-s3/s3-service) | S3 endpoint, access key, secret key (bucket optional) |
 | 02 | [Invenio Repository](notebooks/02_invenio_repository.ipynb) | [NRP Data Catch-all Repository](https://datarepo.eosc.cz) | NRP API token |
 | 03 | [OpenStack API](notebooks/03_openstack_api.ipynb) | [e-INFRA Cloud](https://docs.platforms.cloud.e-infra.cz/en/docs/iaas-cloud/technical-reference/brno-g2-site) | OpenStack application credentials |
 | 04 | [Open WebUI Chat API](notebooks/04_open_webui_chat_api.ipynb) | [e-INFRA AI Chat](https://docs.cerit.io/en/docs/ai-as-a-service/chat-ai) | AI API token |
@@ -29,7 +29,7 @@ Each notebook is self-contained, so you only need the one for your service.
 2. Put your own credentials for that service into `.env` -- the variables are listed in `env.example` and at the top of the notebook.
 3. Run the notebook top to bottom.
 
-Notebooks are committed without outputs on purpose. Notebooks 01 and 02 create one test object / one draft record and delete it again in their Cleanup section; 03 and 04 only read. Notebooks 06 and 07 need an R or MATLAB kernel and no credentials.
+Notebooks are committed without outputs on purpose. Notebooks 01 and 02 create one test object / one draft record and delete it again in their Cleanup section (01 also creates and deletes a temporary bucket when `S3_BUCKET` is not set); 03 and 04 only read. Notebooks 06 and 07 need an R or MATLAB kernel and no credentials.
 
 ---
 
@@ -39,8 +39,9 @@ Notebooks are committed without outputs on purpose. Notebooks 01 and 02 create o
 
 1. Upload or clone this repository into your JupyterHub home directory.
 2. Open a terminal in JupyterLab and run `pip install -e ".[all]"` once (see the table below if you'd rather install only what a specific notebook needs).
-3. Open **`00_environment_check.ipynb`** and run all cells -- it verifies your environment and walks you through credential setup with an interactive wizard.
-4. Open any other notebook and run it. Each notebook's first cell only *checks* that its dependencies are importable; it never installs anything on your behalf. If something is missing, it prints the exact `pip install -e ".[...]"` command to run.
+3. Copy `env.example` to `env` (no leading dot -- OnDemand blocks dotfiles) and fill in your credentials (see [Credential Setup](#credential-setup)).
+4. Open **`00_environment_check.ipynb`** and run all cells -- it verifies your environment.
+5. Open any other notebook and run it. Each notebook's first cell only *checks* that its dependencies are importable; it never installs anything on your behalf. If something is missing, it prints the exact `pip install -e ".[...]"` command to run.
 
 ### Locally
 
@@ -68,13 +69,13 @@ Notebooks 00 and 05 need no extras beyond the base `pip install -e .`.
 
 ## Credential Setup
 
-Credentials are **never stored in the repository**. Three options:
+Credentials are **never stored in the repository**. Options:
 
-1. **Interactive wizard (recommended)** -- The setup cell in `00_environment_check.ipynb` calls `setup_env()`, prompts for each value, and saves them to `~/.config/mcnb/env`. Credentials persist across kernel restarts and sessions.
+1. **Manual file (recommended)** -- Copy `env.example` to `env` in the repo root and fill in your values. Use `env` rather than `.env` on OnDemand, whose file browser blocks dotfiles; locally either name works. Both are gitignored.
 
-2. **Manual file** -- Copy `env.example` to `.env` (or `env` if your platform blocks dotfiles) and fill in your values.
+2. **Home directory config** -- Create `~/.config/mcnb/env` manually. This file has the highest priority and is shared by every checkout of the repository.
 
-3. **Home directory config** -- Create `~/.config/mcnb/env` manually. This file has the highest priority.
+3. **Interactive wizard (optional)** -- `00_environment_check.ipynb` contains a commented-out call to `setup_env()`. Uncomment it to be prompted for each value; it writes `~/.config/mcnb/env` (option 2).
 
 The file `env.example` lists all variables with links to documentation for obtaining each credential.
 
@@ -82,9 +83,9 @@ The file `env.example` lists all variables with links to documentation for obtai
 
 ## What Each Notebook Demonstrates
 
-**00 -- Environment Check**: Detects runtime (local vs MetaCentrum vs e-INFRA), Python version, GPU availability, disk space. Hosts the interactive credential wizard.
+**00 -- Environment Check**: Detects runtime (local vs MetaCentrum vs e-INFRA), Python version, GPU availability, disk space. Explains credential setup and contains the optional credential wizard.
 
-**01 -- S3 Object Storage**: Full CRUD cycle using `boto3` -- list buckets, upload a uniquely named test object, download and verify, generate a presigned URL, retrieve metadata, clean up.
+**01 -- S3 Object Storage**: Full CRUD cycle using `boto3` -- list buckets, use your bucket or create a temporary one, upload a uniquely named test object, download and verify, generate a presigned URL, retrieve metadata, clean up (including the temporary bucket).
 
 **02 -- Invenio Repository**: Invenio REST API for the National Repository Platform (default: Data Catch-all Repository) -- create a draft record, upload a file (three-step process), retrieve draft details, delete the draft. Nothing is published.
 
@@ -120,7 +121,7 @@ All Python notebooks import from `src/mcnb/` to keep credential handling and uti
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.9+ (3.10+ recommended; boto3 no longer supports 3.9)
 - Jupyter environment (JupyterLab, JupyterHub, or local)
 - Service-specific credentials (see table above)
 - For notebook 06: R kernel ([IRkernel](https://irkernel.github.io/))

@@ -42,7 +42,8 @@
 # You need:
 # - Access to CESNET S3 Object Storage
 # - S3 access key and secret key
-# - A bucket (existing or create one)
+# - Optionally, a bucket of your own. Without one, the notebook creates a
+#   temporary bucket and deletes it again in the Cleanup section.
 
 # %% [markdown]
 # ### Where to Get Credentials
@@ -62,7 +63,9 @@
 # S3_ENDPOINT=https://s3.cl4.du.cesnet.cz   # use the endpoint shown in Gatekeeper
 # S3_ACCESS_KEY=your_access_key_here
 # S3_SECRET_KEY=your_secret_key_here
-# S3_BUCKET=your-bucket-name
+# # Optional: an existing bucket to use. Leave it out to let the notebook
+# # create a temporary bucket (and delete it in Cleanup).
+# # S3_BUCKET=your-bucket-name
 # ```
 
 # %% [markdown]
@@ -136,13 +139,14 @@ try:
 except Exception:
     pass
 
-from mcnb.env import need, mask
+from mcnb.env import need, optional, mask
 from mcnb.util import print_section, fmt_error, safe_get
 print("✓ mcnb imported")
 
 import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime
+import uuid
 print("✓ boto3 imported")
 
 # %% [markdown]
@@ -155,13 +159,22 @@ try:
     S3_ENDPOINT = need("S3_ENDPOINT")
     S3_ACCESS_KEY = need("S3_ACCESS_KEY")
     S3_SECRET_KEY = need("S3_SECRET_KEY")
-    S3_BUCKET = need("S3_BUCKET")
-    
+    S3_BUCKET = optional("S3_BUCKET") or None
+
+    # Without S3_BUCKET the notebook works in a temporary bucket of its own.
+    # Bucket names are global per endpoint, so the name gets a random suffix.
+    TEMP_BUCKET = S3_BUCKET is None
+    if TEMP_BUCKET:
+        S3_BUCKET = f"mcnb-test-{datetime.now():%Y%m%dt%H%M%S}-{uuid.uuid4().hex[:6]}"
+
     print("✓ All required environment variables found")
     print(f"\nEndpoint: {S3_ENDPOINT}")
     print(f"Access Key: {mask(S3_ACCESS_KEY)}")
     print(f"Secret Key: {mask(S3_SECRET_KEY)}")
-    print(f"Bucket: {S3_BUCKET}")
+    if TEMP_BUCKET:
+        print(f"Bucket: {S3_BUCKET} (temporary, S3_BUCKET not set)")
+    else:
+        print(f"Bucket: {S3_BUCKET}")
     
 except RuntimeError as e:
     print(f"✗ Missing environment variable: {e}")
@@ -169,15 +182,26 @@ except RuntimeError as e:
     print("  S3_ENDPOINT=https://s3.cl4.du.cesnet.cz")
     print("  S3_ACCESS_KEY=your_access_key")
     print("  S3_SECRET_KEY=your_secret_key")
-    print("  S3_BUCKET=your-bucket-name")
+    print("  S3_BUCKET=your-bucket-name   # optional")
     print("\nSee: https://docs.du.cesnet.cz/en/docs/object-storage-s3/s3-service")
     raise
 
 # %% [markdown]
 # ### Create S3 Client
+#
+# **Note (Python 3.9):** on platforms whose kernel runs Python 3.9 (such as
+# MetaCentrum OnDemand), boto3 warns that it no longer supports that version.
+# The client still works, so the cell below hides this one warning. Newer boto3
+# releases will not install on Python 3.9; use a Python 3.10+ kernel for them.
 
 # %%
 print_section("Creating S3 Client")
+
+import warnings
+from boto3.exceptions import PythonDeprecationWarning
+
+# Known and harmless on Python 3.9; see the note above.
+warnings.filterwarnings("ignore", category=PythonDeprecationWarning)
 
 s3_client = boto3.client(
     "s3",
@@ -193,7 +217,7 @@ print("✓ S3 client created successfully")
 #
 # **If a step fails**: the notebook stops at that cell. Jump to the
 # **Cleanup** section and run its cell so the test object in `mcnb-demo/`
-# is not left in your bucket.
+# (and the temporary bucket, if the notebook created one) is not left behind.
 #
 # ### 1. List Buckets (Validate Access)
 
@@ -209,16 +233,8 @@ try:
         for bucket in buckets:
             print(f"  - {bucket['Name']} (created: {bucket['CreationDate']})")
     else:
-        print("No buckets found. You may need to create one first.")
-        
-    # Check if our target bucket exists
-    bucket_names = [b["Name"] for b in buckets]
-    if S3_BUCKET in bucket_names:
-        print(f"\n✓ Target bucket '{S3_BUCKET}' found")
-    else:
-        print(f"\n⚠️  Warning: Target bucket '{S3_BUCKET}' not found in list")
-        print("   This might be due to permissions or the bucket may not exist yet.")
-        
+        print("No buckets found.")
+
 except ClientError as e:
     error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
     error_msg = safe_get(e.response, "Error", "Message", default=str(e))
@@ -231,7 +247,49 @@ except ClientError as e:
     raise
 
 # %% [markdown]
-# ### 2. Upload a Test Object
+# ### 2. Prepare the Target Bucket
+#
+# Without `S3_BUCKET`, the notebook creates a temporary bucket here and deletes
+# it again in the Cleanup section. A bucket you name in `S3_BUCKET` is only
+# checked: the notebook never creates or deletes it.
+
+# %%
+print_section("Preparing the Target Bucket")
+
+if TEMP_BUCKET:
+    try:
+        s3_client.create_bucket(Bucket=S3_BUCKET)
+        print(f"✓ Temporary bucket created: {S3_BUCKET}")
+        print("  It is deleted again in the Cleanup section.")
+    except ClientError as e:
+        error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
+        error_msg = safe_get(e.response, "Error", "Message", default=str(e))
+        print(f"✗ Could not create a temporary bucket: {error_code}")
+        print(f"  Message: {error_msg}")
+        print("\n  Your key may not be allowed to create buckets (AccessDenied,")
+        print("  TooManyBuckets). Set S3_BUCKET in your env file to an existing bucket.")
+        raise
+else:
+    try:
+        s3_client.head_bucket(Bucket=S3_BUCKET)
+        print(f"✓ Bucket '{S3_BUCKET}' exists and is accessible")
+    except ClientError as e:
+        error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
+        if error_code in ("404", "NoSuchBucket"):
+            print(f"✗ Bucket '{S3_BUCKET}' does not exist")
+            print("\n  Create it once, for example:")
+            print(f"    s3_client.create_bucket(Bucket=\"{S3_BUCKET}\")   # in a notebook cell")
+            print(f"    s3cmd mb s3://{S3_BUCKET}                          # in a terminal")
+            print("  or remove S3_BUCKET from your env file to use a temporary bucket.")
+        elif error_code in ("403", "AccessDenied"):
+            print(f"✗ No access to bucket '{S3_BUCKET}' (403)")
+            print("  The bucket belongs to another account, or your key lacks permission.")
+        else:
+            print(f"✗ Could not check bucket '{S3_BUCKET}': {error_code}")
+        raise
+
+# %% [markdown]
+# ### 3. Upload a Test Object
 
 # %%
 print_section("Uploading Test Object")
@@ -267,7 +325,7 @@ except ClientError as e:
     raise
 
 # %% [markdown]
-# ### 3. List Objects in Bucket
+# ### 4. List Objects in Bucket
 
 # %%
 print_section("Listing Objects in Bucket")
@@ -300,7 +358,7 @@ except ClientError as e:
     raise
 
 # %% [markdown]
-# ### 4. Download and Verify Object
+# ### 5. Download and Verify Object
 
 # %%
 print_section("Downloading Test Object")
@@ -337,7 +395,7 @@ except ClientError as e:
     raise
 
 # %% [markdown]
-# ### 5. Generate Presigned URL (Optional)
+# ### 6. Generate Presigned URL (Optional)
 
 # %%
 print_section("Generating Presigned URL")
@@ -367,7 +425,7 @@ except Exception as e:
     print(fmt_error(e, label="presigned URL"))
 
 # %% [markdown]
-# ### 6. Get Object Metadata
+# ### 7. Get Object Metadata
 
 # %%
 print_section("Getting Object Metadata")
@@ -398,36 +456,53 @@ except ClientError as e:
 # %% [markdown]
 # ## Cleanup
 #
-# Delete the test object we created:
+# Delete the test object we created, and the temporary bucket if the notebook
+# created one in step 2. A bucket named in `S3_BUCKET` is never deleted.
 
 # %%
-print_section("Cleanup: Deleting Test Object")
+print_section("Cleanup")
 
-try:
-    s3_client.delete_object(
-        Bucket=S3_BUCKET,
-        Key=test_key,
-    )
-    print(f"✓ Test object deleted: {test_key}")
-    
-    # Verify deletion
+# test_key does not exist yet if the notebook stopped before the upload step.
+if "test_key" in globals():
     try:
-        s3_client.head_object(Bucket=S3_BUCKET, Key=test_key)
-        print("⚠️  Object still exists (eventual consistency?)")
-    except ClientError as e:
-        if safe_get(e.response, "Error", "Code") == "404":
-            print("✓ Deletion verified")
-        else:
-            error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
-            print(f"⚠️  Verification check returned unexpected error: {error_code}")
-            raise
+        s3_client.delete_object(
+            Bucket=S3_BUCKET,
+            Key=test_key,
+        )
+        print(f"✓ Test object deleted: {test_key}")
 
-except ClientError as e:
-    error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
-    error_msg = safe_get(e.response, "Error", "Message", default=str(e))
-    print(f"✗ Cleanup failed: {error_code}")
-    print(f"  Message: {error_msg}")
-    print("  You may need to delete the object manually")
+        # Verify deletion
+        try:
+            s3_client.head_object(Bucket=S3_BUCKET, Key=test_key)
+            print("⚠️  Object still exists (eventual consistency?)")
+        except ClientError as e:
+            if safe_get(e.response, "Error", "Code") == "404":
+                print("✓ Deletion verified")
+            else:
+                error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
+                print(f"⚠️  Verification check returned unexpected error: {error_code}")
+                raise
+
+    except ClientError as e:
+        error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
+        error_msg = safe_get(e.response, "Error", "Message", default=str(e))
+        print(f"✗ Cleanup failed: {error_code}")
+        print(f"  Message: {error_msg}")
+        print("  You may need to delete the object manually")
+else:
+    print("No test object was uploaded")
+
+if TEMP_BUCKET:
+    try:
+        s3_client.delete_bucket(Bucket=S3_BUCKET)
+        print(f"✓ Temporary bucket deleted: {S3_BUCKET}")
+    except ClientError as e:
+        error_code = safe_get(e.response, "Error", "Code", default="UNKNOWN")
+        if error_code == "NoSuchBucket":
+            print("No temporary bucket to delete (it was never created)")
+        else:
+            print(f"✗ Could not delete temporary bucket {S3_BUCKET}: {error_code}")
+            print("  Delete it manually once it is empty (e.g. s3cmd rb s3://<name>)")
 
 # %% [markdown]
 # ## Troubleshooting

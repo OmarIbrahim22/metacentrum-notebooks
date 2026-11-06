@@ -465,6 +465,7 @@ else:
                 print(f"  Raw response: {response.text}")
                 raise
 
+            DRAFT_DATA = draft  # keep the freshest copy for the next section
             metadata = draft.get("metadata", {})
 
             print("✓ Draft record retrieved successfully")
@@ -473,12 +474,13 @@ else:
             print(f"  Resource Type: {metadata.get('resource_type', {}).get('id', 'N/A')}")
             print(f"  Publication Date: {metadata.get('publication_date', 'N/A')}")
 
-            # List files
-            files = draft.get("files", {}).get("entries", [])
-            if files:
-                print(f"\n  Files ({len(files)}):")
-                for f in files:
-                    print(f"    - {f.get('key', 'N/A')} ({f.get('size', 0)} bytes)")
+            # List files. InvenioRDM returns entries as a dict keyed by filename.
+            entries = draft.get("files", {}).get("entries", {})
+            if entries:
+                print(f"\n  Files ({len(entries)}):")
+                for name, f in entries.items():
+                    print(f"    - {name} ({f.get('size', 0)} bytes)")
+                    print(f"      status: {f.get('status', 'N/A')}, checksum: {f.get('checksum', 'N/A')}")
             else:
                 print("\n  No files attached")
         else:
@@ -504,19 +506,20 @@ if DRAFT_DATA is None:
     print("⚠️  Skipping - no draft record available")
 else:
     links = DRAFT_DATA.get("links", {})
-    
-    print("Available API endpoints for this draft:\n")
-    
-    important_links = ["self", "files", "publish", "edit", "versions"]
-    
+
+    print("API endpoints the server offers for this draft:\n")
+
+    important_links = ["self", "files", "publish", "versions"]
+
     for key in important_links:
         if key in links:
             print(f"  ✓ {key:12} : {links[key]}")
         else:
-            print(f"  ✗ {key:12} : Not available")
-    
-    print("\n⚠️  Note: Publishing requires additional permissions and validation.")
-    print("    This demo creates and manages drafts only.")
+            print(f"  – {key:12} : not offered for this draft/token")
+
+    print("\nℹ  Drafts have no `edit` link; that applies to published records.")
+    print("   Whether a draft can be published directly depends on the repository's")
+    print("   workflow and your token's permissions. This demo never publishes.")
 
 # %% [markdown]
 # ## Cleanup
