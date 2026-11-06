@@ -217,7 +217,8 @@ def get_answer(response, label):
             message += (
                 "\n  The token limit was reached before an answer was written. This usually"
                 "\n  means a reasoning model spent the whole budget on hidden reasoning."
-                "\n  Raise MAX_TOKENS or set EINFRA_AI_MODEL to a different model."
+                "\n  Raise MAX_TOKENS in the Answer Helper cell (e.g. to 4096), re-run it,"
+                "\n  then re-run this cell — or set EINFRA_AI_MODEL to a different model."
             )
         raise ValueError(message)
     return text
