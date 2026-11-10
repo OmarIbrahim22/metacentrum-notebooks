@@ -1,8 +1,10 @@
 """
 Full end-to-end execution of the notebooks that need no external credentials.
 
-Safe by construction: 00 and 05 never call an external service (00 is local
-diagnostics, 05 degrades gracefully with no GPU/container runtime). HOME is
+Safe by construction: 00 and 05 need no credentials (00 is local
+diagnostics; 05 skips each step whose GPU, PyTorch, Ollama or container
+runtime is missing). Where Ollama or a container runtime is installed, 05
+downloads a model or image, so that run needs network access. HOME is
 redirected to an isolated temp dir so the credential-wizard cell in 00 finds
 a pre-seeded ~/.config/mcnb/env and skips interactive prompts, and nothing
 touches your real ~/.config. A repo-root .env, if present, is still loaded

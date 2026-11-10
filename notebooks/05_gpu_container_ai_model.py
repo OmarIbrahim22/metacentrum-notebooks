@@ -14,25 +14,24 @@
 # ---
 
 # %% [markdown]
-# # 05 - GPU Container with AI Model
+# # 05 - GPU and a Local AI Model
 #
 # ## Goal
 #
-# Demonstrate running containers with GPU passthrough to execute AI workloads. This notebook shows how to verify GPU availability, run containers (Apptainer/Singularity), pass GPU devices to containers, and execute AI inference workloads.
+# Use the GPU of your session directly from Python, then run a language model on that GPU and chat with it through the same OpenAI-compatible API as in notebook 04. On MetaCentrum OnDemand, the GPU requested for the Jupyter session is available inside the notebook, so no container is needed. Containers are covered as an optional last step, with a PBS job script for running them on a GPU node.
 #
-# **Runtime**: ~3-5 minutes (depending on container availability)
+# **Runtime**: ~5 minutes on the first run (model download), ~1 minute afterwards
 #
-# **Note**: This notebook degrades gracefully if GPU or container runtime is not available.
+# **Note**: This notebook degrades gracefully: without a GPU, PyTorch, Ollama or a container runtime, the affected steps are skipped with instructions.
 
 # %% [markdown]
 # ## What You Will Learn
 #
-# - How to detect GPU availability in your environment
-# - How to check for container runtime (Apptainer/Singularity)
-# - How to run containers with GPU passthrough
-# - How to verify GPU access inside containers
-# - How to execute AI inference workloads in containers
-# - Best practices for containerized GPU workloads
+# - How to check that your session has a GPU
+# - How to run a computation on the GPU with PyTorch and compare it with the CPU
+# - How to run a language model on your own GPU with Ollama, without root or containers
+# - How to talk to that model with the OpenAI client from notebook 04
+# - When containers work from OnDemand, and how to run them from a PBS job instead
 
 # %% [markdown]
 # ## Prerequisites
@@ -40,49 +39,48 @@
 # ### Access Requirements
 #
 # You need:
-# - GPU node access (on MetaCentrum: request with `#PBS -l select=1:ncpus=1:ngpus=1`)
-# - Container runtime: Apptainer (Singularity) or Docker
-# - Container image with AI framework (PyTorch, TensorFlow, ONNX)
+# - A GPU in your session: on OnDemand, choose a GPU when starting the Jupyter session; in a PBS job, request one with `#PBS -l select=1:ncpus=1:ngpus=1`
+# - About 4 GB free in your home directory (Ollama plus a small model) and a few GB more for PyTorch
 
 # %% [markdown]
-# ### Where to Get Container Images
+# ### Install Ollama (once, no root needed)
 #
-# **Option 1: Pre-built images**
-# - NVIDIA NGC Catalog: https://catalog.ngc.nvidia.com/
-# - Docker Hub: https://hub.docker.com/
-#
-# **Option 2: MetaCentrum/e-INFRA provided images**
-# - Check `/cvmfs/singularity.metacentrum.cz/` (if available)
-# - Or build your own container image
-
-# %% [markdown]
-# ### Required Environment Variables
-#
-# Add these to your `.env` file (optional - notebook will detect automatically):
+# Run this in a terminal (on OnDemand: a terminal in the same session):
 #
 # ```bash
-# CONTAINER_RUNTIME=apptainer  # or singularity, docker
-# CONTAINER_IMAGE=/path/to/image.sif  # optional, see below
+# mkdir -p ~/ollama
+# curl -fL https://ollama.com/download/ollama-linux-amd64.tar.zst | tar --zstd -x -C ~/ollama
+# ~/ollama/bin/ollama --version
 # ```
 #
-# `CONTAINER_IMAGE` is used for both container steps (GPU test and PyTorch
-# inference), so it must be an image **with PyTorch**. It can be a local `.sif`
-# file or a Docker Hub name such as `pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime`.
-# The GPU test still works with such an image: `--nv` (Apptainer) and
-# `--gpus all` (Docker) bring the host's `nvidia-smi` and drivers into the
-# container. Without `CONTAINER_IMAGE`, each step pulls its own default image.
+# The notebook finds Ollama on `PATH` or in `~/ollama/bin/`. It starts and stops the
+# server itself.
+#
+# **Note**: OnDemand sessions can start with a different home directory setup; check
+# that `~/ollama` and your Python packages are still there before a demo.
+
+# %% [markdown]
+# ### Optional Environment Variables
+#
+# Add these to your env file only if you want to change the defaults:
+#
+# ```bash
+# LOCAL_LLM_MODEL=qwen2.5:1.5b    # any model from https://ollama.com/library
+# OLLAMA_BIN=/path/to/ollama      # if Ollama is installed elsewhere
+# CONTAINER_RUNTIME=apptainer     # preferred runtime for the optional step 6
+# ```
 
 # %% [markdown]
 # ### Installation
 #
 # ```bash
-# pip install -e .
+# pip install -e ".[openwebui]"   # openai client, used to chat with the local model
+# pip install torch               # PyTorch with CUDA (a few GB)
 # ```
 #
-# Run once from the repo root, from a terminal (not from inside a notebook cell).
-# No packages beyond the base utilities are needed for this notebook.
-#
-# **On MetaCentrum**: Container runtimes are usually pre-installed.
+# Run once from the repo root, from a terminal (not from inside a notebook cell),
+# then restart the kernel. Both are optional: steps that need a missing package are
+# skipped with this hint.
 
 # %% [markdown]
 # ## Setup
@@ -123,12 +121,14 @@ if _importlib_util.find_spec("mcnb") is None:
 else:
     print("✓ mcnb installed")
 
+
 # %% [markdown]
 # ### Dependency Check
 #
 # This only *checks* that dependencies are importable — it never installs
 # anything on its own. If something is missing, it tells you the exact
-# command to run yourself in a terminal.
+# command to run yourself in a terminal. PyTorch and `openai` are optional
+# here: the steps that need them are skipped with an install hint.
 
 # %%
 from mcnb.util import require_deps
@@ -150,9 +150,19 @@ from mcnb.env import optional
 from mcnb.util import print_section, check_gpu_available, run, fmt_error
 print("✓ mcnb imported")
 
-import subprocess
+import importlib.util
 import os
+import shutil
+import socket
+import subprocess
 import tempfile
+import time
+import urllib.request
+
+HAS_TORCH = importlib.util.find_spec("torch") is not None
+HAS_OPENAI = importlib.util.find_spec("openai") is not None
+print(f"PyTorch installed: {'yes' if HAS_TORCH else 'no (step 2 will be skipped)'}")
+print(f"openai installed:  {'yes' if HAS_OPENAI else 'no (step 5 will be skipped)'}")
 
 # %% [markdown]
 # ### Load Configuration
@@ -160,61 +170,52 @@ import tempfile
 # %%
 print_section("Loading Configuration")
 
-# Optional configuration
+# Which model to run locally. Small models load in seconds and fit on any
+# MetaCentrum GPU; see https://ollama.com/library for others.
+LOCAL_LLM_MODEL = optional("LOCAL_LLM_MODEL", "qwen2.5:1.5b")
+
+# Ollama binary: OLLAMA_BIN, else `ollama` on PATH, else ~/ollama/bin/ollama
+# (where the install command in the Prerequisites puts it).
+OLLAMA_BIN = optional("OLLAMA_BIN", None)
+if not OLLAMA_BIN:
+    _home_bin = os.path.expanduser("~/ollama/bin/ollama")
+    OLLAMA_BIN = shutil.which("ollama") or (_home_bin if os.path.exists(_home_bin) else None)
+
 CONTAINER_RUNTIME = optional("CONTAINER_RUNTIME", "apptainer")
-CONTAINER_IMAGE = optional("CONTAINER_IMAGE", None)
 
-print(f"Container runtime preference: {CONTAINER_RUNTIME}")
-if CONTAINER_IMAGE:
-    print(f"Container image: {CONTAINER_IMAGE}")
-    looks_like_path = CONTAINER_IMAGE.endswith(".sif") or CONTAINER_IMAGE.startswith(("/", "./", "~"))
-    if looks_like_path and not os.path.exists(os.path.expanduser(CONTAINER_IMAGE)):
-        print("⚠️  CONTAINER_IMAGE looks like a file path, but the file does not exist.")
-        print("   Check the path, or use a Docker Hub name instead.")
-else:
-    print("Container image: default image per step (pulled from Docker Hub)")
-
-
-def image_ref(default):
-    """Image for the current runtime: CONTAINER_IMAGE or the given default.
-
-    Apptainer/Singularity need a docker:// prefix for Docker Hub names;
-    local .sif files and references that already have a scheme are kept.
-    """
-    image = CONTAINER_IMAGE or default
-    if RUNTIME_NAME in ("apptainer", "singularity"):
-        local = os.path.expanduser(image)
-        if os.path.exists(local):
-            return local
-        if "://" not in image:
-            return f"docker://{image}"
-    return image
+print(f"Local model:       {LOCAL_LLM_MODEL}")
+print(f"Ollama binary:     {OLLAMA_BIN or 'not found (steps 3-5 will be skipped)'}")
+print(f"Container runtime: {CONTAINER_RUNTIME} (preference for the optional step 6)")
 
 # %% [markdown]
 # ## Minimal Working Demo
 #
-# ### 1. Check GPU Availability (Host)
+# ### 1. Check GPU Availability
+#
+# On OnDemand, a GPU requested for the session is visible directly inside the
+# Jupyter session. No extra container is needed to use it.
 
 # %%
-print_section("Checking GPU Availability on Host")
+print_section("Checking GPU Availability")
 
 gpu_info = check_gpu_available()
 
 if gpu_info["available"]:
-    print("✓ GPU detected on host!\n")
+    print("✓ GPU detected!\n")
     print("nvidia-smi output:")
     print("=" * 60)
     print(gpu_info["output"])
     print("=" * 60)
-    
+
     GPU_AVAILABLE = True
 else:
-    print("✗ No GPU detected on host\n")
+    print("✗ No GPU detected\n")
     print(f"Details: {gpu_info['output']}")
     print("\n⚠️  This notebook can still run but will use CPU mode")
-    print("\nOn MetaCentrum, request GPU with:")
+    print("\nOn OnDemand, start the Jupyter session with a GPU (GPU field in the form).")
+    print("In a PBS job, request one with:")
     print("  #PBS -l select=1:ncpus=1:ngpus=1")
-    
+
     GPU_AVAILABLE = False
 
 # Check for GPU devices
@@ -224,10 +225,276 @@ else:
     print("\nNo /dev/nvidia* devices found")
 
 # %% [markdown]
-# ### 2. Detect Container Runtime
+# ### 2. Use the GPU from Python (PyTorch)
+#
+# The same matrix multiplication runs on the CPU and on the GPU. The first GPU
+# call includes CUDA start-up, so it is run once before timing.
 
 # %%
-print_section("Detecting Container Runtime")
+print_section("PyTorch on the GPU")
+
+TORCH_CUDA = False
+
+if not HAS_TORCH:
+    print("⚠️  Skipping - PyTorch is not installed")
+    print("\nInstall it from a terminal (a few GB, includes the CUDA libraries):")
+    print("  pip install torch")
+    print("then restart the kernel.")
+else:
+    try:
+        import torch
+
+        print(f"PyTorch version: {torch.__version__}")
+        print(f"CUDA available:  {torch.cuda.is_available()}")
+
+        if torch.cuda.is_available():
+            TORCH_CUDA = True
+            print(f"GPU name:        {torch.cuda.get_device_name(0)}")
+
+            size = 4096
+            a_cpu = torch.rand(size, size)
+            b_cpu = torch.rand(size, size)
+
+            start = time.perf_counter()
+            a_cpu @ b_cpu
+            cpu_s = time.perf_counter() - start
+
+            a_gpu, b_gpu = a_cpu.cuda(), b_cpu.cuda()
+            a_gpu @ b_gpu  # warm-up
+            torch.cuda.synchronize()
+            start = time.perf_counter()
+            a_gpu @ b_gpu
+            torch.cuda.synchronize()
+            gpu_s = time.perf_counter() - start
+
+            print(f"\n{size}x{size} matrix multiplication:")
+            print(f"  CPU: {cpu_s * 1000:8.1f} ms")
+            print(f"  GPU: {gpu_s * 1000:8.1f} ms  ({cpu_s / gpu_s:.0f}x faster)")
+            print("\n✓ GPU computation works from this notebook")
+        elif GPU_AVAILABLE:
+            print("\n✗ A GPU is present, but this PyTorch build cannot use it")
+            print("  It is probably a CPU-only build; reinstall with: pip install torch")
+        else:
+            print("\nNo GPU - PyTorch runs on the CPU only")
+
+    except Exception as e:
+        print(fmt_error(e, label="PyTorch GPU test"))
+
+# %% [markdown]
+# ### 3. Start a Local LLM Server (Ollama)
+#
+# [Ollama](https://ollama.com) runs language models on the GPU and serves them
+# over an OpenAI-compatible HTTP API. It is a single user-space program: no
+# root, no container. The notebook starts its own server on a free port
+# (another user on the same node may already use Ollama's default port) and
+# stops it in Cleanup.
+
+# %%
+print_section("Starting a Local LLM Server")
+
+
+def free_port():
+    """Return a TCP port on localhost that is free right now."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def server_is_up(host):
+    """True when the Ollama API at host answers."""
+    try:
+        with urllib.request.urlopen(f"http://{host}/api/version", timeout=2):
+            return True
+    except OSError:
+        return False
+
+
+# Re-running this cell reuses a server it already started.
+OLLAMA_PROC = globals().get("OLLAMA_PROC")
+SERVER_UP = OLLAMA_PROC is not None and OLLAMA_PROC.poll() is None
+
+if SERVER_UP:
+    print(f"✓ Server already running at http://{OLLAMA_HOST}")
+elif OLLAMA_BIN is None:
+    print("⚠️  Skipping - Ollama is not installed")
+    print("\nInstall it from a terminal (no root needed, about 2 GB):")
+    print("  mkdir -p ~/ollama")
+    print("  curl -fL https://ollama.com/download/ollama-linux-amd64.tar.zst | tar --zstd -x -C ~/ollama")
+    print("then re-run the Load Configuration cell and this one.")
+else:
+    try:
+        OLLAMA_HOST = f"127.0.0.1:{free_port()}"
+        OLLAMA_ENV = dict(os.environ, OLLAMA_HOST=OLLAMA_HOST)
+        OLLAMA_LOG = os.path.join(tempfile.gettempdir(), f"mcnb_ollama_{os.getpid()}.log")
+
+        print(f"Running: {OLLAMA_BIN} serve  (OLLAMA_HOST={OLLAMA_HOST})")
+        with open(OLLAMA_LOG, "w") as log:
+            OLLAMA_PROC = subprocess.Popen(
+                [OLLAMA_BIN, "serve"], env=OLLAMA_ENV, stdout=log, stderr=subprocess.STDOUT
+            )
+
+        for _ in range(30):
+            if server_is_up(OLLAMA_HOST) or OLLAMA_PROC.poll() is not None:
+                break
+            time.sleep(1)
+
+        with open(OLLAMA_LOG) as log:
+            log_lines = log.read().splitlines()
+
+        if server_is_up(OLLAMA_HOST):
+            SERVER_UP = True
+            print(f"✓ Server running at http://{OLLAMA_HOST}")
+            # Ollama logs which GPU (or CPU) it will use.
+            compute = [l for l in log_lines if "inference compute" in l]
+            if compute:
+                print(f"\nOllama compute device:\n  {compute[-1].strip()}")
+        else:
+            print("✗ The server did not start")
+            print(f"\nLast lines of {OLLAMA_LOG}:")
+            for line in log_lines[-10:] or ["(empty)"]:
+                print(f"  {line}")
+            if OLLAMA_PROC.poll() is None:
+                OLLAMA_PROC.terminate()
+            OLLAMA_PROC = None
+
+    except Exception as e:
+        print(fmt_error(e, label="start Ollama"))
+        OLLAMA_PROC = None
+
+# %% [markdown]
+# ### 4. Download a Small Model
+#
+# The first run downloads the model (about 1 GB for the default) to
+# `~/.ollama/models`; later runs reuse it.
+
+# %%
+print_section("Downloading the Model")
+
+MODEL_READY = False
+
+if not SERVER_UP:
+    print("⚠️  Skipping - the local server is not running (see step 3)")
+else:
+    try:
+        print(f"Running: ollama pull {LOCAL_LLM_MODEL}")
+        print("(This may take a few minutes the first time)\n")
+        result = subprocess.run(
+            [OLLAMA_BIN, "pull", LOCAL_LLM_MODEL],
+            env=OLLAMA_ENV, capture_output=True, text=True, timeout=900,
+        )
+        if result.returncode == 0:
+            MODEL_READY = True
+            print(f"✓ Model '{LOCAL_LLM_MODEL}' is ready")
+        else:
+            print(f"✗ Download failed (exit code {result.returncode})")
+            for line in (result.stderr or result.stdout).strip().splitlines()[-3:]:
+                print(f"  {line}")
+            print("\nCheck the model name at https://ollama.com/library and the network.")
+
+    except subprocess.TimeoutExpired:
+        print("✗ Download did not finish within 15 minutes; re-run this cell to resume")
+    except Exception as e:
+        print(fmt_error(e, label="ollama pull"))
+
+# %% [markdown]
+# ### 5. Chat with the Local Model
+#
+# This is the same OpenAI client as in notebook 04. Only `base_url` changes:
+# from the hosted e-INFRA CZ service to the model on your own GPU.
+
+# %%
+print_section("Chat with the Local Model")
+
+LOCAL_CHAT_OK = False
+MODEL_ON_GPU = False
+MAX_TOKENS = 1024  # same budget as notebook 04
+
+if not MODEL_READY:
+    print("⚠️  Skipping - no local model available (see steps 3 and 4)")
+elif not HAS_OPENAI:
+    print("⚠️  Skipping - the openai package is not installed")
+    print("\nInstall it from a terminal, from the repo root:")
+    print('  pip install -e ".[openwebui]"')
+    print("then restart the kernel.")
+else:
+    try:
+        from openai import OpenAI
+
+        # Ollama ignores the API key, but the client requires one.
+        local_client = OpenAI(base_url=f"http://{OLLAMA_HOST}/v1", api_key="ollama")
+
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant running on a MetaCentrum GPU."},
+            {"role": "user", "content": "In two sentences, what is a GPU and why is it useful for AI?"},
+        ]
+        print(f"Model:  {LOCAL_LLM_MODEL}")
+        print(f"Prompt: {messages[-1]['content']}\n")
+
+        start = time.perf_counter()
+        response = local_client.chat.completions.create(
+            model=LOCAL_LLM_MODEL,
+            messages=messages,
+            max_tokens=MAX_TOKENS,
+        )
+        elapsed = time.perf_counter() - start
+
+        answer = response.choices[0].message.content if response.choices else None
+        if answer and answer.strip():
+            LOCAL_CHAT_OK = True
+            print("Response:")
+            print("-" * 60)
+            print(answer.strip())
+            print("-" * 60)
+            tokens = response.usage.completion_tokens if response.usage else None
+            if tokens:
+                print(f"\n{tokens} tokens in {elapsed:.1f} s ({tokens / elapsed:.0f} tokens/s, includes model loading on first call)")
+        else:
+            finish = response.choices[0].finish_reason if response.choices else None
+            print(f"✗ The model returned no text (finish_reason={finish})")
+
+        # `ollama ps` shows where the loaded model runs, e.g. "100% GPU".
+        ps = subprocess.run(
+            [OLLAMA_BIN, "ps"], env=OLLAMA_ENV, capture_output=True, text=True, timeout=10
+        )
+        print("\nollama ps:")
+        print(ps.stdout.strip() or ps.stderr.strip())
+        MODEL_ON_GPU = "GPU" in ps.stdout
+        if LOCAL_CHAT_OK:
+            if MODEL_ON_GPU:
+                print("\n✓ The model answered from this node's GPU")
+            else:
+                print("\n⚠️  The model answered, but it runs on the CPU (see Troubleshooting)")
+
+    except Exception as e:
+        print(fmt_error(e, label="local chat"))
+
+# %% [markdown]
+# ### 6. Optional: Containers
+#
+# Apptainer containers are MetaCentrum's usual way to bring your own software
+# (for example a specific PyTorch build) to a GPU node, with `--nv` to pass the
+# GPU in. On OnDemand, though, Jupyter itself already runs inside Apptainer, so
+# starting a container from here nests one container in another. That only
+# works with an unprivileged (user-namespace) runtime; this step tests whether
+# it works in your session.
+#
+# Where nested containers fail, run the container from a PBS job instead, for
+# example with this job script (`qsub gpu_container.sh`):
+#
+# ```bash
+# #PBS -N gpu-container
+# #PBS -l select=1:ncpus=2:ngpus=1:mem=16gb:scratch_local=20gb
+# #PBS -l walltime=00:30:00
+#
+# # Keep the image cache and build files off the home quota.
+# export SINGULARITY_CACHEDIR=$SCRATCHDIR SINGULARITY_TMPDIR=$SCRATCHDIR
+# singularity exec --nv docker://pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime \
+#   python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+# ```
+
+# %%
+print_section("Optional: Container Runtime")
+
 
 def check_runtime(runtime_name):
     """Check if a container runtime is available AND functional."""
@@ -238,446 +505,244 @@ def check_runtime(runtime_name):
         if result and "version" in result.lower():
             return True, result
         return False, f"{runtime_name}: found but not functional (output: {result!r})"
-    except FileNotFoundError:
-        return False, f"{runtime_name}: command not found"
-    except PermissionError as e:
-        return False, f"{runtime_name}: permission denied — {e}"
     except Exception as e:
         return False, fmt_error(e, label=runtime_name)
 
-import os as _os
 
-# Detect if we are already running inside a container.
-# On MetaCentrum/ondemand, Jupyter itself runs inside Apptainer — Docker-in-Docker
-# is blocked. On a local dev machine, /.singularity.d does not exist, so Docker is probed.
-INSIDE_CONTAINER = _os.path.exists("/.singularity.d") or _os.path.exists("/.dockerenv")
+def run_container(cmd, timeout):
+    """Run a container command and return (exit code, output).
+
+    Unlike run(), this keeps the exit code: the runtime can print a lot
+    (image pull progress) and still fail before the container starts.
+    """
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+    output = "\n".join(s.strip() for s in (result.stdout, result.stderr) if s.strip())
+    return result.returncode, output
+
+
+# On OnDemand, Jupyter runs inside Apptainer and Docker is not available.
+INSIDE_CONTAINER = os.path.exists("/.singularity.d") or os.path.exists("/.dockerenv")
 if INSIDE_CONTAINER:
-    print("ℹ  Running inside a container — Docker-in-Docker is not available.")
-    print("   Only Apptainer/Singularity will be probed.\n")
+    print("ℹ  Running inside a container - only Apptainer/Singularity are probed.\n")
 
-# Build probe list: user preference first, then Apptainer/Singularity,
-# then Docker only if we are on a bare host.
-_seen = set()
-runtimes_to_check = []
-for _r in [CONTAINER_RUNTIME, "apptainer", "singularity"]:
-    if _r and _r not in _seen:
-        _seen.add(_r)
-        runtimes_to_check.append(_r)
+runtimes_to_check = list(dict.fromkeys([CONTAINER_RUNTIME, "apptainer", "singularity"]))
 if not INSIDE_CONTAINER:
     runtimes_to_check.append("docker")
 
 RUNTIME_CMD = None
-RUNTIME_NAME = None
-
 for runtime in runtimes_to_check:
     available, version = check_runtime(runtime)
     if available:
         RUNTIME_CMD = runtime
-        RUNTIME_NAME = runtime
         print(f"✓ Found container runtime: {runtime}")
-        print(f"  Version: {version.split(chr(10))[0]}")
+        print(f"  Version: {version.splitlines()[0]}\n")
         break
 
-if RUNTIME_CMD is None:
-    print("✗ No container runtime found")
-    print("\nTried: " + ", ".join(runtimes_to_check))
-    print("\n⚠️  Container demos will be skipped")
-    print("\nOn MetaCentrum, load module:")
-    print("  module load apptainer")
-
-# %% [markdown]
-# ### 3. Test Container Execution (Basic)
-
-# %%
-print_section("Testing Basic Container Execution")
+CONTAINER_WORKS = False
 
 if RUNTIME_CMD is None:
-    print("⚠️  Skipping - no container runtime available")
+    print("⚠️  No container runtime found (tried: " + ", ".join(runtimes_to_check) + ")")
+    print("   That is fine for steps 1-5. In a PBS job: module load apptainer")
 else:
-    try:
-        # Use a minimal test - most runtimes support running from Docker Hub
-        if RUNTIME_NAME in ["apptainer", "singularity"]:
-            # Apptainer/Singularity can run Docker images directly
-            cmd = f"{RUNTIME_CMD} exec docker://alpine:latest echo 'Hello from container!'"
-        else:  # docker
-            cmd = f"{RUNTIME_CMD} run --rm alpine:latest echo 'Hello from container!'"
-        
-        print(f"Running: {cmd}\n")
-        
-        output = run(cmd, timeout=60, check=False)
-        
-        if "Hello from container" in output:
-            print("✓ Container execution successful!")
-            print(f"\nOutput: {output}")
-            CONTAINER_WORKS = True
-        else:
-            print("⚠️  Container ran but output unexpected")
-            print(f"Output: {output}")
-            CONTAINER_WORKS = False
-            
-    except Exception as e:
-        print(fmt_error(e, label="container execution"))
-        print("\nThis may be due to:")
-        print("  - Network access required to pull images")
-        print("  - Permission issues")
-        print("  - Container runtime not properly configured")
-        CONTAINER_WORKS = False
-
-# %% [markdown]
-# ### 4. Test GPU Passthrough to Container
-
-# %%
-print_section("Testing GPU Passthrough to Container")
-
-if RUNTIME_CMD is None:
-    print("⚠️  Skipping - no container runtime available")
-elif not GPU_AVAILABLE:
-    print("⚠️  Skipping - no GPU available on host")
-else:
-    try:
-        # Build GPU-enabled container command
-        if RUNTIME_NAME in ["apptainer", "singularity"]:
-            # Apptainer/Singularity use --nv flag for NVIDIA GPU support
-            container_ref = image_ref("nvidia/cuda:12.0.0-base-ubuntu22.04")
-            cmd = f"{RUNTIME_CMD} exec --nv {container_ref} nvidia-smi"
-            
-        else:  # docker
-            container_ref = image_ref("nvidia/cuda:12.0.0-base-ubuntu22.04")
-            cmd = f"{RUNTIME_CMD} run --rm --gpus all {container_ref} nvidia-smi"
-        
-        print(f"Running: {cmd}\n")
-        print("(This may take a moment if the image needs to be pulled)\n")
-        
-        output = run(cmd, timeout=180, check=False)
-        
-        if "NVIDIA-SMI" in output:
-            print("✓ GPU passthrough successful!\n")
-            print("nvidia-smi output from inside container:")
-            print("=" * 60)
-            print(output)
-            print("=" * 60)
-            GPU_IN_CONTAINER = True
-        else:
-            print("✗ GPU passthrough failed")
-            print(f"\nOutput: {output[:500]}")
-            GPU_IN_CONTAINER = False
-            
-    except Exception as e:
-        print(fmt_error(e, label="GPU passthrough test"))
-        print("\nCommon causes:")
-        print("  - Container runtime doesn't support GPU passthrough")
-        print("  - NVIDIA container toolkit not installed (Docker)")
-        print("  - Wrong GPU flags for this runtime")
-        GPU_IN_CONTAINER = False
-
-# %% [markdown]
-# ### 5. Simple AI Inference Demo
-
-# %%
-print_section("AI Inference Demo (Python in Container)")
-
-if RUNTIME_CMD is None or not CONTAINER_WORKS:
-    print("⚠️  Skipping - container runtime not available or not working")
-else:
-    try:
-        # Create a simple Python script to test PyTorch GPU availability
-        test_script = '''
-import sys
-try:
-    import torch
-    print(f"PyTorch version: {torch.__version__}")
-    print(f"CUDA available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        print(f"CUDA version: {torch.version.cuda}")
-        print(f"GPU count: {torch.cuda.device_count()}")
-        print(f"GPU name: {torch.cuda.get_device_name(0)}")
-        
-        # Simple tensor operation on GPU
-        x = torch.rand(5, 3).cuda()
-        print(f"\\nCreated tensor on GPU: {x.device}")
-        print(f"Tensor shape: {x.shape}")
-        print("✓ GPU tensor operations working!")
+    if RUNTIME_CMD == "docker":
+        cmd = "docker run --rm alpine:latest echo 'Hello from container!'"
     else:
-        print("Running in CPU mode")
-        x = torch.rand(5, 3)
-        print(f"Created tensor: {x.shape}")
-except ImportError:
-    print("PyTorch not available in this container")
-    print("This is OK - demonstrates container execution")
-except Exception as e:
-    print(f"Error: {e}")
-'''
-        
-        # Write script to a uniquely named temp file
-        try:
-            _fd, script_path = tempfile.mkstemp(prefix="mcnb_gpu_test_", suffix=".py")
-            with os.fdopen(_fd, "w") as f:
-                f.write(test_script)
-        except OSError as e:
-            print(fmt_error(e, label="write temp script"))
-            print("  Cannot write to the temp directory — skipping AI inference demo.")
-            script_path = None
+        cmd = f"{RUNTIME_CMD} exec docker://alpine:latest echo 'Hello from container!'"
+    print(f"Running: {cmd}\n")
 
-        if script_path is None:
-            pass  # already reported above
+    try:
+        exit_code, output = run_container(cmd, timeout=120)
+        if exit_code == 0 and "Hello from container" in output:
+            CONTAINER_WORKS = True
+            print("✓ Containers can be started from this session")
         else:
-            try:
-                print("Testing PyTorch GPU availability in container...\n")
-
-                # Build container command
-                if RUNTIME_NAME in ["apptainer", "singularity"]:
-                    gpu_flag = "--nv" if GPU_AVAILABLE else ""
-                    container_ref = image_ref("pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime")
-                    cmd = f"{RUNTIME_CMD} exec {gpu_flag} {container_ref} python {script_path}"
-                else:  # docker
-                    gpu_flag = "--gpus all" if GPU_AVAILABLE else ""
-                    container_ref = image_ref("pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime")
-                    cmd = f"{RUNTIME_CMD} run --rm {gpu_flag} -v {script_path}:{script_path} {container_ref} python {script_path}"
-
-                print(f"Running: {cmd}\n")
-                print("(This may take a moment if pulling PyTorch image)\n")
-
-                output = run(cmd, timeout=300, check=False)
-
-                print("Output:")
-                print("=" * 60)
-                print(output if output else "(no output)")
-                print("=" * 60)
-
-                if "PyTorch version" in output or "PyTorch not available" in output:
-                    print("\n✓ Container execution successful!")
-                    if "GPU tensor operations working" in output:
-                        print("✓ GPU operations confirmed working in container!")
-                else:
-                    print("\n⚠️  Execution completed but output was unexpected or empty")
-
-            except Exception as e:
-                print(fmt_error(e, label="AI inference demo"))
-                print("\nThis is often due to:")
-                print("  - Image pull timeout or network issues")
-                print("  - Container doesn't have PyTorch installed")
-                print("  - Insufficient resources")
-            finally:
-                # Always clean up temp file
-                try:
-                    os.remove(script_path)
-                except OSError:
-                    pass  # already gone or never written
-
+            print(f"✗ Container could not start (exit code {exit_code})\n")
+            lines = output.splitlines()
+            errors = [l.strip() for l in lines if l.lstrip().startswith(("ERROR", "FATAL"))]
+            print("Runtime error:")
+            for line in errors or lines[-5:] or ["(no output)"]:
+                print(f"  {line}")
+            if "setuid" in output:
+                print("\nThis runtime needs setuid, which does not work inside the OnDemand")
+                print("container. This is expected here: steps 1-5 use the GPU without a")
+                print("container, and the PBS job script above runs containers on a GPU node.")
+    except subprocess.TimeoutExpired:
+        print("✗ The container did not finish within 2 minutes (image pull too slow?)")
     except Exception as e:
-        print(fmt_error(e, label="AI inference demo — unexpected error"))
-        print("\nThis is often due to:")
-        print("  - Image pull timeout or network issues")
-        print("  - Container doesn't have PyTorch installed")
-        print("  - Insufficient resources")
+        print(fmt_error(e, label="container test"))
 
 # %% [markdown]
-# ### 6. Environment Summary
+# ### 7. Summary
 
 # %%
-print_section("GPU Container Environment Summary")
-
-print("Capability Checklist:\n")
+print_section("Summary")
 
 checks = [
-    ("GPU available on host", GPU_AVAILABLE),
-    ("Container runtime available", RUNTIME_CMD is not None),
-    ("Container execution works", CONTAINER_WORKS if 'CONTAINER_WORKS' in locals() else False),
-    ("GPU passthrough works", GPU_IN_CONTAINER if 'GPU_IN_CONTAINER' in locals() else False),
+    ("GPU visible in this session", GPU_AVAILABLE),
+    ("PyTorch computes on the GPU", TORCH_CUDA),
+    ("Local LLM server running", SERVER_UP),
+    ("Local model answered", LOCAL_CHAT_OK),
+    ("Local model runs on the GPU", MODEL_ON_GPU),
+    ("Containers start from this session (optional)", CONTAINER_WORKS),
 ]
 
 for check_name, passed in checks:
     status = "✓ YES" if passed else "✗ NO "
     print(f"  {status}  - {check_name}")
 
-print("\nConfiguration:")
-print(f"  Runtime: {RUNTIME_NAME if RUNTIME_CMD else 'None'}")
-if CONTAINER_IMAGE:
-    print(f"  Image: {CONTAINER_IMAGE}")
-
 print("\n" + "=" * 60)
-if GPU_AVAILABLE and RUNTIME_CMD and checks[2][1]:
-    print("✓ Environment ready for GPU-accelerated containerized AI workloads!")
-elif RUNTIME_CMD and checks[2][1]:
-    print("✓ Environment ready for CPU containerized AI workloads")
-    print("  (Request GPU node for GPU acceleration)")
+if LOCAL_CHAT_OK and MODEL_ON_GPU:
+    print("✓ A language model is running on this session's GPU")
+elif LOCAL_CHAT_OK:
+    print("✓ A language model is running locally (on the CPU)")
 else:
-    print("⚠️  Some capabilities missing - see checklist above")
+    print("⚠️  Some steps were skipped or failed - see the messages above")
 print("=" * 60)
 
 # %% [markdown]
 # ## Cleanup
 #
-# Clean up any temporary files created during the demo:
+# Stops the Ollama server this notebook started and removes its log. The
+# downloaded model stays in `~/.ollama/models` for the next run; delete it with
+# `~/ollama/bin/ollama rm <model>` (while a server runs) or remove that folder.
 
 # %%
 print_section("Cleanup")
 
-# The inference demo removes its temp script itself; this is a safety net
-# in case that cell was interrupted.
-cleanup_paths = [p for p in [globals().get("script_path")] if p]
+_proc = globals().get("OLLAMA_PROC")
+if _proc is not None and _proc.poll() is None:
+    _proc.terminate()
+    try:
+        _proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        _proc.kill()
+    print("✓ Stopped the Ollama server")
+else:
+    print("No Ollama server was started by this notebook")
+OLLAMA_PROC = None
+SERVER_UP = False
 
-for path in cleanup_paths:
-    if os.path.exists(path):
-        try:
-            os.remove(path)
-            print(f"✓ Removed: {path}")
-        except Exception as e:
-            print(f"⚠️  Could not remove {path}: {e}")
+_log = globals().get("OLLAMA_LOG")
+if _log and os.path.exists(_log):
+    try:
+        os.remove(_log)
+        print(f"✓ Removed: {_log}")
+    except OSError as e:
+        print(f"⚠️  Could not remove {_log}: {e}")
 
 print("\n✓ Cleanup complete")
-print("\nNote: Container images may be cached by the runtime.")
-print("      This is normal and helps performance on subsequent runs.")
+print("\nNote: the model and any container images stay cached for later runs.")
 
 # %% [markdown]
 # ## Troubleshooting
 #
 # ### GPU Issues
 #
-# **No GPU detected on host**
-# - Not running on a GPU node
-# - On MetaCentrum: Use `#PBS -l select=1:ncpus=1:ngpus=1`
-# - Check `nvidia-smi` works in terminal
-# - Verify NVIDIA drivers installed
+# **No GPU detected**
+# - On OnDemand: start the Jupyter session with a GPU (GPU field in the form)
+# - In a PBS job: `#PBS -l select=1:ncpus=1:ngpus=1`
+# - Check that `nvidia-smi` works in a terminal of the same session
 #
-# **GPU detected but not in container**
-# - Missing GPU flags (`--nv` for Apptainer, `--gpus all` for Docker)
-# - Docker: Install NVIDIA Container Toolkit
-# - Check container runtime supports GPU passthrough
+# **PyTorch: `CUDA available: False` although a GPU is present**
+# - A CPU-only build is installed; `pip install torch` from PyPI includes CUDA on Linux
+# - The kernel runs Python 3.9 on OnDemand, so pip picks the last PyTorch release for 3.9; that still works
 
 # %% [markdown]
-# ### Container Runtime Issues
+# ### Local LLM Issues
+#
+# **`tar: --zstd` not supported / `zstd: not found`**
+# - The Ollama release is a `.tar.zst` archive; it needs `zstd`
+# - Check `zstd --version`; see the [Ollama Linux docs](https://docs.ollama.com/linux) for other install options
+#
+# **The server does not start**
+# - The cell prints the end of the server log; read the error there
+# - Check the binary runs: `~/ollama/bin/ollama --version`
+#
+# **The model runs on the CPU (`ollama ps` shows `100% CPU`)**
+# - The session has no GPU, or Ollama could not find the CUDA libraries
+# - The `inference compute` line from step 3 shows what Ollama detected
+#
+# **Download is slow or fails**
+# - The first download is about 1 GB; re-running the cell resumes it
+# - Check the model name at https://ollama.com/library
+#
+# **Home quota exceeded**
+# - Ollama (~2 GB) and models live in your home directory
+# - Remove unused models: `~/ollama/bin/ollama rm <model>`
+
+# %% [markdown]
+# ### Container Issues
+#
+# **`No setuid installation found` (OnDemand)**
+# - Jupyter on OnDemand already runs in Apptainer; setuid does not work in a nested container
+# - Run containers from a PBS job (script in step 6) or a frontend shell
 #
 # **Container runtime not found**
-# - On MetaCentrum: `module load apptainer`
-# - Check runtime is in PATH: `which apptainer`
-# - Install locally if needed
-#
-# **Permission denied errors**
-# - Docker: Add user to docker group (or use rootless mode)
-# - Apptainer: Usually runs as user (no special permissions needed)
-# - Check file permissions on container images
+# - In a PBS job or on a frontend: `module load apptainer`
+# - Check that the runtime is in PATH: `which apptainer singularity`
 #
 # **Cannot pull images**
 # - Network connectivity required
-# - Some sites block Docker Hub
-# - Use pre-downloaded .sif files instead
-# - Check proxy settings
-
-# %% [markdown]
-# ### Container Execution Issues
-#
-# **"library not found" errors**
-# - Container missing required CUDA libraries
-# - Use NVIDIA-provided base images
-# - Check CUDA version compatibility
-#
-# **Slow execution**
-# - First run pulls image (can be large)
-# - Subsequent runs use cached image
-# - Pre-download images for production use
-#
-# **Container can't access files**
-# - Bind mount needed: `apptainer exec -B /path:/path ...`
-# - Docker: Use `-v /path:/path` flag
-# - Check file paths are absolute
-
-# %% [markdown]
-# ### AI Framework Issues
-#
-# **PyTorch/TensorFlow not found**
-# - Container doesn't have framework installed
-# - Use framework-specific images (e.g., `pytorch/pytorch`)
-# - Or install in container during build
-#
-# **CUDA version mismatch**
-# - Container CUDA version != host driver version
-# - Use containers with compatible CUDA
-# - NVIDIA drivers are backward compatible (usually)
+# - Use pre-downloaded `.sif` files instead
+# - Set `SINGULARITY_CACHEDIR` to scratch to avoid filling the home quota
 
 # %% [markdown]
 # ### Debugging Tips
 #
 # ```bash
-# # Check GPU on host
+# # GPU in this session
 # nvidia-smi
 #
-# # Check runtime version
-# apptainer --version
+# # Ollama by hand (default port 11434)
+# ~/ollama/bin/ollama serve &
+# ~/ollama/bin/ollama run qwen2.5:1.5b "Hello"
+# ~/ollama/bin/ollama ps
 #
-# # Test basic container
-# apptainer exec docker://alpine:latest cat /etc/os-release
+# # OpenAI-compatible API
+# curl http://127.0.0.1:11434/v1/models
 #
-# # Test GPU in container
+# # Containers (PBS job or frontend)
 # apptainer exec --nv docker://nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
-#
-# # Interactive shell in container
-# apptainer shell --nv docker://pytorch/pytorch:latest
 # ```
 
 # %% [markdown]
 # ## Next Steps
 #
-# Now that you understand GPU containers, you can:
+# ### Bigger or Different Models
 #
-# ### Advanced Container Usage
-#
-# - **Build custom images** - Create Singularity/Docker definition files
-# - **Multi-GPU setups** - Utilize multiple GPUs in parallel
-# - **Container orchestration** - Use Kubernetes for scaling
-# - **MPI in containers** - Distributed computing across nodes
+# - Set `LOCAL_LLM_MODEL` in your env file, e.g. `llama3.2:3b` or `qwen2.5:7b`
+# - Larger models need more GPU memory; `nvidia-smi` shows how much the GPU has
+# - Use the local model in notebook 04's code by changing only `base_url`
 
 # %% [markdown]
-# ### AI/ML Workloads
+# ### GPU Workloads Beyond Chat
 #
-# - **Model training** - Train neural networks with GPU acceleration
-# - **Batch inference** - Process large datasets efficiently
-# - **Model serving** - Deploy models as containerized services
-# - **Distributed training** - Multi-node, multi-GPU training
+# - **Model training** - Train neural networks with PyTorch on the GPU
+# - **Batch inference** - Process large datasets in a PBS job
+# - **Containers** - Pin exact software versions with Apptainer images in PBS jobs
+# - **Multi-GPU** - Request more GPUs with `ngpus=2` and higher
 
 # %% [markdown]
 # ### Integration Ideas
 #
-# - **S3 + Containers** - Load data from object storage, process in container
+# - **S3 + local model** - Summarise documents stored in object storage
 # - **Repository integration** - Archive trained models to Invenio
-# - **OpenStack + Containers** - Launch GPU VMs with containerized workloads
-# - **Workflow pipelines** - Chain notebooks for end-to-end ML pipelines
-
-# %% [markdown]
-# ### Performance Tips
-#
-# **Container optimization**
-# - Use minimal base images
-# - Layer caching for faster builds
-# - Pre-download datasets into image
-# - Use bind mounts for large data
-#
-# **GPU optimization**
-# - Batch size tuning
-# - Mixed precision training (FP16)
-# - Gradient accumulation
-# - Profile with nvidia-smi, nvprof
-#
-# **MetaCentrum-specific**
-# - Use scratch storage for temporary data
-# - Request appropriate walltime
-# - Monitor job efficiency
-# - Use GPU quotas wisely
+# - **OpenStack** - Run a model server on a GPU virtual machine
 
 # %% [markdown]
 # ### Related Notebooks
 #
 # - **01_s3_object_storage.ipynb** - Store models and datasets
 # - **03_openstack_api.ipynb** - Launch GPU instances
-# - **04_open_webui_chat_api.ipynb** - Compare with API-based AI
+# - **04_open_webui_chat_api.ipynb** - The same chat code against the hosted e-INFRA CZ service
 
 # %% [markdown]
 # ### Documentation
 #
-# - [Apptainer Documentation](https://apptainer.org/docs/)
-# - [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/)
-# - [NVIDIA NGC Catalog](https://catalog.ngc.nvidia.com/)
 # - [MetaCentrum GPU Computing](https://docs.metacentrum.cz/en/docs/computing/gpu-comput/nvidia)
 # - [MetaCentrum Containers](https://docs.metacentrum.cz/en/docs/software/containers)
-# - [PyTorch Docker Images](https://github.com/pytorch/pytorch#docker-image)
-# - [TensorFlow Docker Images](https://www.tensorflow.org/install/docker)
+# - [Ollama Linux install](https://docs.ollama.com/linux)
+# - [Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)
+# - [Ollama model library](https://ollama.com/library)
+# - [PyTorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)
+# - [Apptainer Documentation](https://apptainer.org/docs/)

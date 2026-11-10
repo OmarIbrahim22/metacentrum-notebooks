@@ -15,7 +15,7 @@ See them run: [omaribrahim22.github.io/metacentrum-notebooks-site](https://omari
 | 02 | [Invenio Repository](notebooks/02_invenio_repository.ipynb) | [NRP Data Catch-all Repository](https://datarepo.eosc.cz) | NRP API token |
 | 03 | [OpenStack API](notebooks/03_openstack_api.ipynb) | [e-INFRA Cloud](https://docs.platforms.cloud.e-infra.cz/en/docs/iaas-cloud/technical-reference/brno-g2-site) | OpenStack application credentials |
 | 04 | [Open WebUI Chat API](notebooks/04_open_webui_chat_api.ipynb) | [e-INFRA AI Chat](https://docs.cerit.io/en/docs/ai-as-a-service/chat-ai) | AI API token |
-| 05 | [GPU Container + AI Model](notebooks/05_gpu_container_ai_model.ipynb) | Apptainer/Docker with GPU passthrough | None (optional config) |
+| 05 | [GPU + Local AI Model](notebooks/05_gpu_container_ai_model.ipynb) | Session GPU, PyTorch, [Ollama](https://ollama.com) | None (Ollama install, optional config) |
 | 06 | [R Kernel Demo](notebooks/06_r_kernel_demo.ipynb) | R language kernel | None (R kernel required) |
 | 07 | [MATLAB Kernel Demo](notebooks/07_matlab_kernel_demo.ipynb) | MATLAB kernel | None (MATLAB kernel required) |
 
@@ -29,7 +29,7 @@ Each notebook is self-contained, so you only need the one for your service.
 2. Put your own credentials for that service into `.env` -- the variables are listed in `env.example` and at the top of the notebook.
 3. Run the notebook top to bottom.
 
-Notebooks are committed without outputs on purpose. Notebooks 01 and 02 create one test object / one draft record and delete it again in their Cleanup section (01 also creates and deletes a temporary bucket when `S3_BUCKET` is not set); 03 and 04 only read. Notebooks 06 and 07 need an R or MATLAB kernel and no credentials.
+Notebooks are committed without outputs on purpose. Notebooks 01 and 02 create one test object / one draft record and delete it again in their Cleanup section (01 also creates and deletes a temporary bucket when `S3_BUCKET` is not set); 03 and 04 only read; 05 downloads a small language model (about 1 GB, kept in `~/.ollama`) when Ollama is installed and stops its local model server in Cleanup. Notebooks 06 and 07 need an R or MATLAB kernel and no credentials.
 
 ---
 
@@ -60,10 +60,10 @@ jupyter lab
 | `.[s3]` | `boto3` | 01 - S3 Object Storage |
 | `.[invenio]` | `requests` | 02 - Invenio Repository |
 | `.[openstack]` | `openstacksdk` | 03 - OpenStack API |
-| `.[openwebui]` | `openai` | 04 - Open WebUI Chat API |
+| `.[openwebui]` | `openai` | 04 - Open WebUI Chat API, 05 - local model chat |
 | `.[all]` | all of the above | everything |
 
-Notebooks 00 and 05 need no extras beyond the base `pip install -e .`.
+Notebook 00 needs no extras beyond the base `pip install -e .`. Notebook 05 runs with the base install too; it uses `openai` (`.[openwebui]`), PyTorch (`pip install torch`) and Ollama when they are present and skips those steps otherwise.
 
 ---
 
@@ -93,7 +93,7 @@ The file `env.example` lists all variables with links to documentation for obtai
 
 **04 -- Open WebUI Chat API**: OpenAI-compatible API for e-INFRA AI chat -- list models and pick a chat-capable one, simple chat completion, multi-turn conversation, code generation, streaming responses.
 
-**05 -- GPU Container + AI Model**: Detect container runtime (Apptainer/Singularity/Docker), run a basic container, test GPU passthrough with `nvidia-smi`, run PyTorch inference inside a GPU container.
+**05 -- GPU + Local AI Model**: Check the session's GPU, compare a PyTorch matrix multiplication on CPU and GPU, start an Ollama server and run a small language model on the GPU, chat with it through the same OpenAI client as notebook 04. Optional: test whether containers start from the session, with a PBS job script for running Apptainer with `--nv` on a GPU node.
 
 **06 -- R Kernel Demo**: Basic R usage in Jupyter -- vectors and data frames, base R graphics, correlation and linear regression, the built-in `iris` dataset, checking for installed packages.
 
