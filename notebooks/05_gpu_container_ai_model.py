@@ -49,9 +49,15 @@
 #
 # ```bash
 # mkdir -p ~/ollama
-# curl -fL https://ollama.com/download/ollama-linux-amd64.tar.zst | tar --zstd -x -C ~/ollama
+# python3 -m pip install pyzstd     # unpacks .tar.zst archives; OnDemand images have no zstd tool
+# curl -fL -o ~/ollama.tar.zst https://ollama.com/download/ollama-linux-amd64.tar.zst
+# python3 -m pyzstd -d ~/ollama.tar.zst --tar-output-dir ~/ollama
+# rm ~/ollama.tar.zst                # the 1.5 GB download is no longer needed
 # ~/ollama/bin/ollama --version
 # ```
+#
+# Where the `zstd` tool is installed (`zstd --version`), `tar` can download and unpack
+# in one step: `curl -fL https://ollama.com/download/ollama-linux-amd64.tar.zst | tar --zstd -x -C ~/ollama`
 #
 # The notebook finds Ollama on `PATH` or in `~/ollama/bin/`. It starts and stops the
 # server itself.
@@ -319,7 +325,10 @@ elif OLLAMA_BIN is None:
     print("⚠️  Skipping - Ollama is not installed")
     print("\nInstall it from a terminal (no root needed, about 2 GB):")
     print("  mkdir -p ~/ollama")
-    print("  curl -fL https://ollama.com/download/ollama-linux-amd64.tar.zst | tar --zstd -x -C ~/ollama")
+    print("  python3 -m pip install pyzstd")
+    print("  curl -fL -o ~/ollama.tar.zst https://ollama.com/download/ollama-linux-amd64.tar.zst")
+    print("  python3 -m pyzstd -d ~/ollama.tar.zst --tar-output-dir ~/ollama")
+    print("  rm ~/ollama.tar.zst")
     print("then re-run the Load Configuration cell and this one.")
 else:
     try:
@@ -583,8 +592,10 @@ checks = [
     ("Local LLM server running", SERVER_UP),
     ("Local model answered", LOCAL_CHAT_OK),
     ("Local model runs on the GPU", MODEL_ON_GPU),
-    ("Containers start from this session (optional)", CONTAINER_WORKS),
 ]
+# Step 6 is optional: listed only when it was run.
+if "CONTAINER_WORKS" in globals():
+    checks.append(("Containers start from this session (optional)", CONTAINER_WORKS))
 
 for check_name, passed in checks:
     status = "✓ YES" if passed else "✗ NO "
@@ -650,9 +661,10 @@ print("\nNote: the model and any container images stay cached for later runs.")
 # %% [markdown]
 # ### Local LLM Issues
 #
-# **`tar: --zstd` not supported / `zstd: not found`**
-# - The Ollama release is a `.tar.zst` archive; it needs `zstd`
-# - Check `zstd --version`; see the [Ollama Linux docs](https://docs.ollama.com/linux) for other install options
+# **`zstd: Cannot exec` / `tar: Child died with signal 13` / `curl: (23) Failure writing output`**
+# - The Ollama release is a `.tar.zst` archive; `tar --zstd` needs the `zstd` tool, which the OnDemand images (e.g. `debian11.sif`) do not have
+# - The `curl` error is a follow-up: `tar` stopped, so the download had nowhere to go
+# - Use the `pyzstd` commands from "Install Ollama" above; see the [Ollama Linux docs](https://docs.ollama.com/linux) for other install options
 #
 # **The server does not start**
 # - The cell prints the end of the server log; read the error there
